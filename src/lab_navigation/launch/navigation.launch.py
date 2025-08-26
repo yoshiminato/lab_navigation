@@ -118,7 +118,7 @@ def generate_launch_description():
             [
                 'ros2 launch nav2_bringup navigation_launch.py use_sim_time:=false params_file:=',
                 nav2_params_file_path,
-                ' log_level:=error',
+                ' log_level:=info',
                 ' params_file:=',
                 params_file_path,
                 '; exec bash'
