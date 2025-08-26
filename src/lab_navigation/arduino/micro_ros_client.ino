@@ -7,9 +7,9 @@
 #define RIGHT_A 27
 #define RIGHT_B 26
 #define LEFT_PWM 16
-#define LEFT_DIR 5
+#define LEFT_DIR 18
 #define RIGHT_PWM 17
-#define RIGHT_DIR 18
+#define RIGHT_DIR 5
 #define MAX_PWM 40
 #define MIN_PWM 15
 #define PWM_FREQ 20000
@@ -27,7 +27,7 @@ const float VOLTAGE_DIVIDER_RATIO = (R1 + R2) / R2;
 #define TICKS_PER_REV 1060.0
 
 double PWM_SCALE_LEFT  = 9e-2;
-double PWM_SCALE_RIGHT = 8.4e-2;
+double PWM_SCALE_RIGHT = 9e-2;
 
 
 
@@ -55,7 +55,7 @@ struct StatusPacket {
   float right_position;
   float right_velocity;
   float battery_voltage;
-  uint8_t checksum;
+  uint8_t checksum; // 簡単なエラーチェック用
 } __attribute__((packed));
 
 CommandPacket rx_data;
