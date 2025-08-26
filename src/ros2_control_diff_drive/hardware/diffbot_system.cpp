@@ -93,8 +93,12 @@ hardware_interface::CallbackReturn DiffBotSystemHardware::on_init(
     }
   }
 
-  rx_buffer_.resize(sizeof(StatusPacket)); // 受信バッファをStatusPacketのサイズに合わせて初期化
-  rx_data_ = {}; // 受信データ構造体をゼロ初期化
+  rx_buffer_.resize(sizeof(StatusPacket));
+  rx_data_ = {};
+
+  // バッテリー残量用のノードとパブリッシャーを初期化
+  node_ = rclcpp::Node::make_shared("diffbot_hw_node");
+  battery_pub_ = node_->create_publisher<std_msgs::msg::Float32>("battery_level", 10);
 
   return hardware_interface::CallbackReturn::SUCCESS;
 }
@@ -191,6 +195,13 @@ hardware_interface::return_type DiffBotSystemHardware::read(
         hw_positions_[1] = rx_data_.right_position;
         hw_velocities_[1] = rx_data_.right_velocity;
       }
+      
+      // バッテリー残量をパブリッシュ
+      if (battery_pub_) {
+        std_msgs::msg::Float32 battery_msg;
+        battery_msg.data = rx_data_.battery_voltage;
+        battery_pub_->publish(battery_msg);
+      }
     }
   } catch (...) {
     return hardware_interface::return_type::ERROR;
@@ -238,12 +249,9 @@ bool DiffBotSystemHardware::receive_packet(StatusPacket* packet) {
 
   while(serial_port_.IsDataAvailable()) {
     uint8_t byte;
-    try {
-      serial_port_.ReadByte(byte);
-    } catch (...) {
-      return false;
-    }
-
+    
+    serial_port_.ReadByte(byte);
+  
     switch (receive_state_)
     {
       case ReceiveState::WAIT_FOR_HEADER1:
@@ -263,14 +271,14 @@ bool DiffBotSystemHardware::receive_packet(StatusPacket* packet) {
 
       case ReceiveState::RECEIVE_DATA:
         rx_buffer_[rx_index++] = byte;
-        if(rx_index < sizeof(StatusPacket)) return false;
+        if(rx_index < sizeof(StatusPacket)) break;
         
         size_t   len = sizeof(StatusPacket) - 1;
         uint8_t  cs  = calculate_checksum(rx_buffer_.data(), len);
 
         if (byte != cs) {
           receive_state_ = ReceiveState::WAIT_FOR_HEADER1;
-          return false;
+          break;
         }
 
         std::memcpy(packet, rx_buffer_.data(), sizeof(StatusPacket));

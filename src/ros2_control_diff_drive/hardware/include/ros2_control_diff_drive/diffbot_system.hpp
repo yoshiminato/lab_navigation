@@ -18,6 +18,7 @@
 #include "rclcpp_lifecycle/state.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "std_msgs/msg/float64_multi_array.hpp"
+#include "std_msgs/msg/float32.hpp"
 #include <libserial/SerialPort.h>
 
 namespace ros2_control_diff_drive
@@ -49,6 +50,7 @@ struct StatusPacket {
   float left_velocity;
   float right_position;
   float right_velocity;
+  float battery_voltage;
   uint8_t checksum = 0; // 簡単なエラーチェック用
 } __attribute__((packed));
 
@@ -91,6 +93,8 @@ private:
   bool receive_packet(StatusPacket* packet);
 
   // サブスクライバーとパブリッシャー
+  rclcpp::Node::SharedPtr node_;
+  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr battery_pub_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr velocity_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
@@ -106,7 +110,7 @@ private:
   std::vector<double> hw_velocities_;
 
   LibSerial::SerialPort serial_port_;
-  std::string device_name_ = "/dev/ttyUSB0"; 
+  std::string device_name_ = "/dev/ttyUSB1"; 
 };
 
 }  // namespace ros2_control_diff_drive
