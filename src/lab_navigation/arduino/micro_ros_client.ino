@@ -1,6 +1,7 @@
 #include <Arduino.h>
 
 // ---------------- ハードウェア ----------------
+#define BATTERY 34
 #define LEFT_A 13
 #define LEFT_B 14
 #define RIGHT_A 27
@@ -16,13 +17,17 @@
 #define LEFT_PWM_CH 0
 #define RIGHT_PWM_CH 1
 
+#define R1 99000
+#define R2 10000
+const float VOLTAGE_DIVIDER_RATIO = (R1 + R2) / R2;
+
 // ---------------- ロボットパラメータ ----------------
 #define WHEEL_RADIUS 0.135
 #define WHEEL_BASE   0.50
 #define TICKS_PER_REV 1060.0
 
-double PWM_SCALE = 9.0;
-double MAX_LINEAR_VEL = 0.5;
+double PWM_SCALE_LEFT  = 9e-2;
+double PWM_SCALE_RIGHT = 8.4e-2;
 
 // ---------------- 通信パケット関連 ----------------
 #define HEADER1 0xAA
@@ -45,6 +50,7 @@ struct StatusPacket {
   float left_velocity;
   float right_position;
   float right_velocity;
+  float battery_voltage;
   uint8_t checksum; // 簡単なエラーチェック用
 } __attribute__((packed));
 
@@ -194,8 +200,8 @@ void loop(){
     double target_left = rx_data.left_velocity_cmd * WHEEL_RADIUS;
     double target_right = rx_data.right_velocity_cmd * WHEEL_RADIUS;
     
-    int pwm_left  = (int)(target_left/PWM_SCALE*MAX_PWM);
-    int pwm_right = (int)(target_right/PWM_SCALE*MAX_PWM);
+    int pwm_left  = (int)(rx_data.left_velocity_cmd*PWM_SCALE_LEFT*MAX_PWM);
+    int pwm_right = (int)(rx_data.right_velocity_cmd*PWM_SCALE_RIGHT*MAX_PWM);
     pwm_left  = constrain(pwm_left,-MAX_PWM,MAX_PWM);
     pwm_right = constrain(pwm_right,-MAX_PWM,MAX_PWM);
     
@@ -207,6 +213,7 @@ void loop(){
   double dt = (current_time - last_time) / 1000.0;
   
   if (dt >= 0.05) { // 約20Hz (50ms) で送信
+
     noInterrupts();
     long l = left_count;
     long r = right_count;
@@ -224,12 +231,17 @@ void loop(){
     double left_vel  = (2 * PI * l_diff / TICKS_PER_REV) / dt;
     double right_vel = (2 * PI * r_diff / TICKS_PER_REV) / dt;
 
+    uint32_t pin_millivolts = analogReadMilliVolts(BATTERY);
+    float pin_voltage = pin_millivolts / 1000.0;
+    float battery_voltage = pin_voltage * VOLTAGE_DIVIDER_RATIO; // 実際のバッテリー電圧
+
     tx_data.header1 = HEADER1;
     tx_data.header2 = HEADER2;
     tx_data.left_position  = current_left_pos;
     tx_data.left_velocity  = left_vel;
     tx_data.right_position = current_right_pos;
     tx_data.right_velocity = right_vel;
+    tx_data.battery_voltage = battery_voltage;
 
     size_t   len = sizeof(StatusPacket) - 1; 
     uint8_t *ptr = (uint8_t*)&tx_data;       
