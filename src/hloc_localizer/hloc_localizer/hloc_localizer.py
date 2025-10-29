@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 
+"""
+画像からHLocでカメラ位置を推定する
+"""
+
 import math
 import time
 from pathlib import Path
@@ -190,11 +194,13 @@ class HlocLocalizerNode(Node):
             12,
         )
 
+        # PnPカメラ姿勢推定の許容誤差(px)
         self.declare_parameter(
             'ransac_thresh',
             12.0,
         )
 
+        # 参照画像の特徴奇術師を何件までメモリにキャッシュしておくか
         self.declare_parameter(
             'descriptor_cache_size',
             30,
@@ -343,12 +349,15 @@ class HlocLocalizerNode(Node):
             f'{self.backend.sfm_path}'
         )
 
+
+        # SfM再構成結果の読み込み
         self.reconstruction = (
             pycolmap.Reconstruction(
                 self.backend.sfm_path
             )
         )
 
+        # 事前に撮影した画像列に内部IDを割り振る
         self.db_name_to_id = {
             image.name:
             image_id
@@ -385,6 +394,7 @@ class HlocLocalizerNode(Node):
                 'cameras. Using the first one.'
             )
 
+        # カメラモデル(画像サイズ, カメラパラメータ)の取り出し
         self.query_camera = next(
             iter(
                 self.reconstruction
@@ -409,6 +419,7 @@ class HlocLocalizerNode(Node):
             '2D -> 3D lookup tables...'
         )
 
+        # 各画像の2D特徴点に対応する3D点IDの一覧を辞書に格納
         self.ref_point3d_ids = {}
 
         for (
@@ -463,6 +474,7 @@ class HlocLocalizerNode(Node):
             'Loading NetVLAD model...'
         )
 
+        # NetVLAD設定の取得
         self.netvlad_conf = (
             extract_features
             .confs['netvlad']
@@ -485,6 +497,7 @@ class HlocLocalizerNode(Node):
             .to(self.device)
         )
 
+        # 参照画像のNetVLADの特徴量の読み込み
         (
             self.reference_names,
             reference_global,
@@ -494,6 +507,7 @@ class HlocLocalizerNode(Node):
             )
         )
 
+        # numpy配列からPyTorch Tensorに変換
         self.reference_global = (
             torch.from_numpy(
                 reference_global
@@ -502,6 +516,7 @@ class HlocLocalizerNode(Node):
             .to(self.device)
         )
 
+        # 正規化
         self.reference_global = (
             torch.nn.functional.normalize(
                 self.reference_global,
@@ -519,6 +534,7 @@ class HlocLocalizerNode(Node):
         # PnP
         # ====================================================
 
+        # PnPローカライザの準備
         self.localizer = QueryLocalizer(
             self.reconstruction,
             config={
@@ -606,11 +622,13 @@ class HlocLocalizerNode(Node):
     # Utilities
     # ========================================================
 
+    # GPUに投げた処理が終わるまでCPUを待機させる
     def _sync_cuda(self):
 
         if self.device.type == 'cuda':
             torch.cuda.synchronize()
 
+    # 画像リサイズ(計算量削減のため)
     @staticmethod
     def _resize_max(
         image,
@@ -652,6 +670,7 @@ class HlocLocalizerNode(Node):
     # NetVLAD reference
     # ========================================================
 
+    # 参照画像ごとの大域特徴量を読み込み, [画像数, 特等次元]の行列にまとめる
     def _load_reference_global_features(
         self,
         path,
@@ -722,6 +741,7 @@ class HlocLocalizerNode(Node):
     # NetVLAD query
     # ========================================================
 
+    # 入力クエリ画像からNetVLADの大域特徴量を作成
     def _extract_netvlad(
         self,
         image_bgr,
@@ -789,6 +809,7 @@ class HlocLocalizerNode(Node):
     # Retrieval
     # ========================================================
 
+    # クエリ画像のNetVLAD大域特徴量, 全参照画像の大域特徴量を比較し, 類似画像を選別
     def _retrieve(
         self,
         query_descriptor,

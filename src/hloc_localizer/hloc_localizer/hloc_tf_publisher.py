@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
 
+'''
+Hlocが推定したカメラの絶対姿勢(map→camera)と
+ロボット側のTF(odom→baselink, baselink→camera)
+を組みわわせてmap→odomのTFを計算・配信するノード
+'''
+
 import math
 
 import rclpy
@@ -28,6 +34,10 @@ from tf2_ros import (
 
 def quat_normalize(q):
 
+    """
+    クォータニオンを長さ1に正規化
+    """
+
     x, y, z, w = q
 
     n = math.sqrt(
@@ -52,6 +62,10 @@ def quat_normalize(q):
 
 def quat_conjugate(q):
 
+    """
+    クォータニオンの共役を返す
+    """
+
     x, y, z, w = q
 
     return (
@@ -66,6 +80,10 @@ def quat_multiply(
     q1,
     q2,
 ):
+
+    """
+    2つのクォータニオンをハミルトン積で乗算する
+    """
 
     x1, y1, z1, w1 = q1
     x2, y2, z2, w2 = q2
@@ -95,6 +113,17 @@ def quat_multiply(
 
 def rotate_vector(q, v):
 
+    """
+    クォータニオンを使って3次元ベクトルを回転させる
+
+    Args:
+        q: 回転を表すクォータニオン ``(x, y, z, w)``
+        v: 3次元ベクトル ``(x, y, z)``
+
+    Returns:
+        tuple: 回転後の3次元ベクトル
+    """
+
     q = quat_normalize(q)
 
     vq = (
@@ -121,6 +150,17 @@ def rotate_vector(q, v):
 
 def invert_transform(t, q):
 
+    """
+    剛体変換を反転する
+
+    Args:
+        t: 並進 ``(x, y, z)``。
+        q: 回転クォータニオン ``(x, y, z, w)``
+
+    Returns:
+        tuple: 反転後の ``(並進, クォータニオン)``
+    """
+
     q_inv = quat_conjugate(
         quat_normalize(q)
     )
@@ -146,6 +186,19 @@ def compose_transform(
     t2,
     q2,
 ):
+
+    """
+    2つの剛体変換を合成
+
+    Args:
+        t1: 1つ目の変換の並進 ``(x, y, z)``
+        q1: 1つ目の変換の回転 ``(x, y, z, w)``
+        t2: 2つ目の変換の並進 ``(x, y, z)``
+        q2: 2つ目の変換の回転 ``(x, y, z, w)``
+
+    Returns:
+        tuple: 合成後の ``(並進, クォータニオン)``
+    """
 
     rotated_t2 = rotate_vector(
         q1,
@@ -176,7 +229,18 @@ def compose_transform(
 
 class HlocTfPublisher(Node):
 
+    """
+    HLocのカメラ姿勢から map -> odom のTFを計算するROS 2ノード
+
+    以下の変換を組み合わせて map -> odom を計算する
+
+        - HLocから得られる map -> camera
+        - TFから得られる base_link -> camera
+        - TFから得られる odom -> base_link
+    """
+
     def __init__(self):
+        """ROSパラメータ、TF、購読、タイマーを初期化する。"""
 
         super().__init__(
             'hloc_tf_publisher'
@@ -272,10 +336,13 @@ class HlocTfPublisher(Node):
             )
         )
 
+        # HLocからの最新姿勢を一時保存する変数
         self.pending_pose = None
 
+        # 最後に処理した姿勢のタイムスタンプ
         self.last_processed_stamp = None
 
+        # 最後に計算したmap→odomの変換結果
         self.map_to_odom = None
 
         self.timer = self.create_timer(
@@ -292,6 +359,7 @@ class HlocTfPublisher(Node):
         self,
         msg,
     ):
+        """最新のHLoc姿勢を保存"""
 
         self.pending_pose = msg
 
@@ -299,6 +367,8 @@ class HlocTfPublisher(Node):
         self,
         pose,
     ):
+
+        """HLocのカメラ姿勢と既存TFから map -> odom を計算"""
 
         pose_time = Time.from_msg(
             pose.header.stamp
@@ -502,6 +572,9 @@ class HlocTfPublisher(Node):
 
     def publish_map_to_odom(self):
 
+        """最後に計算した map -> odom の変換をTFとして配信"""            
+
+        # まだ演算結果がなければ終了
         if self.map_to_odom is None:
             return
 
@@ -540,6 +613,8 @@ class HlocTfPublisher(Node):
         )
 
     def timer_callback(self):
+
+        """新しいHLoc姿勢を処理し、map -> odom を継続的に配信"""
 
         if self.pending_pose is not None:
 
