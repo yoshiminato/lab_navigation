@@ -1,0 +1,266 @@
+#include <Arduino.h>
+#include <micro_ros_arduino.h>
+
+#include <rcl/rcl.h>
+#include <rclc/rclc.h>
+#include <rclc/executor.h>
+
+#include <sensor_msgs/msg/joint_state.h>
+#include <nav_msgs/msg/odometry.h>
+#include <geometry_msgs/msg/twist.h>
+
+#include <rosidl_runtime_c/string_functions.h>
+#include <rosidl_runtime_c/primitives_sequence_functions.h>
+
+#include <rmw_microros/time_sync.h>
+
+// ---------------- ハードウェア ----------------
+#define LEFT_A 13
+#define LEFT_B 14
+#define RIGHT_A 27
+#define RIGHT_B 26
+#define LEFT_PWM 16
+#define LEFT_DIR 5
+#define RIGHT_PWM 17
+#define RIGHT_DIR 18
+#define MAX_PWM 255
+#define MIN_PWM 5
+#define PWM_FREQ 20000
+#define PWM_RESOLUTION 8
+#define LEFT_PWM_CH 0
+#define RIGHT_PWM_CH 1
+
+// ---------------- ロボットパラメータ ----------------
+#define WHEEL_RADIUS 0.135
+#define WHEEL_BASE   0.50
+#define TICKS_PER_REV 1060.0
+#define CONTROL_PERIOD_MS 50
+
+double PWM_SCALE = 10.0;
+double MAX_LINEAR_VEL = 0.5;
+
+// ---------------- グローバル ----------------
+volatile long left_count = 0;
+volatile long right_count = 0;
+volatile int left_last_AB = 0;
+volatile int right_last_AB = 0;
+
+double x = 0;
+double y = 0;
+double theta = 0;
+
+double target_left = 0;
+double target_right = 0;
+
+// ---------------- ROS ----------------
+rcl_publisher_t joint_pub;
+rcl_publisher_t odom_pub;
+rcl_subscription_t twist_sub;
+
+rclc_executor_t executor;
+rclc_support_t support;
+rcl_allocator_t allocator;
+rcl_node_t node;
+rcl_timer_t timer;
+
+sensor_msgs__msg__JointState joint_msg;
+nav_msgs__msg__Odometry odom_msg;
+geometry_msgs__msg__Twist twist_msg;
+
+#define RCCHECK(fn) { rcl_ret_t rc = fn; if(rc!=RCL_RET_OK){while(1);} }
+#define RCSOFTCHECK(fn) { rcl_ret_t rc=fn; }
+
+// ---------------- エンコーダ ----------------
+void IRAM_ATTR leftEncoder(){
+  int A = digitalRead(LEFT_A);
+  int B = digitalRead(LEFT_B);
+  int AB = (A<<1)|B;
+  int delta = 0;
+  switch((left_last_AB<<2)|AB){
+    case 0b0001: case 0b0111: case 0b1110: case 0b1000: delta=1; break;
+    case 0b0010: case 0b0100: case 0b1101: case 0b1011: delta=-1; break;
+  }
+  left_count += delta;
+  left_last_AB = AB;
+}
+
+void IRAM_ATTR rightEncoder(){
+  int A = digitalRead(RIGHT_A);
+  int B = digitalRead(RIGHT_B);
+  int AB = (A<<1)|B;
+  int delta = 0;
+  switch((right_last_AB<<2)|AB){
+    case 0b0001: case 0b0111: case 0b1110: case 0b1000: delta=1; break;
+    case 0b0010: case 0b0100: case 0b1101: case 0b1011: delta=-1; break;
+  }
+  right_count += delta;
+  right_last_AB = AB;
+}
+
+// ---------------- モータ ----------------
+void setMotor(int l_pwm,int r_pwm){
+  if(abs(l_pwm)<MIN_PWM) ledcWrite(LEFT_PWM_CH,0);
+  else{
+    digitalWrite(LEFT_DIR,l_pwm>0);
+    ledcWrite(LEFT_PWM_CH,abs(l_pwm));
+  }
+  if(abs(r_pwm)<MIN_PWM) ledcWrite(RIGHT_PWM_CH,0);
+  else{
+    digitalWrite(RIGHT_DIR,r_pwm>0);
+    ledcWrite(RIGHT_PWM_CH,abs(r_pwm));
+  }
+}
+
+// ---------------- cmd_vel ----------------
+void twist_callback(const void *msgin){
+  const geometry_msgs__msg__Twist *msg = (const geometry_msgs__msg__Twist*)msgin;
+  double v = msg->linear.x;
+  double w = msg->angular.z;
+  v = constrain(v,-MAX_LINEAR_VEL,MAX_LINEAR_VEL);
+  target_left  = (v - w*WHEEL_BASE/2.0)/WHEEL_RADIUS;
+  target_right = (v + w*WHEEL_BASE/2.0)/WHEEL_RADIUS;
+}
+
+// ---------------- timer ----------------
+void timer_callback(rcl_timer_t *timer,int64_t last_call_time){
+  RCLC_UNUSED(timer);
+  RCLC_UNUSED(last_call_time);
+
+  static long prev_left=0;
+  static long prev_right=0;
+  double dt = CONTROL_PERIOD_MS/1000.0;
+
+  noInterrupts();
+  long l = left_count;
+  long r = right_count;
+  interrupts();
+
+  double l_diff=(l-prev_left)/4.0;
+  double r_diff=(r-prev_right)/4.0;
+  prev_left=l;
+  prev_right=r;
+
+  double dl = 2*PI*l_diff/TICKS_PER_REV * WHEEL_RADIUS;
+  double dr = 2*PI*r_diff/TICKS_PER_REV * WHEEL_RADIUS;
+
+  double left_vel = dl/dt/WHEEL_RADIUS;
+  double right_vel = dr/dt/WHEEL_RADIUS;
+
+  int pwm_left  = (int)(target_left/PWM_SCALE*MAX_PWM);
+  int pwm_right = (int)(target_right/PWM_SCALE*MAX_PWM);
+  pwm_left  = constrain(pwm_left,-MAX_PWM,MAX_PWM);
+  pwm_right = constrain(pwm_right,-MAX_PWM,MAX_PWM);
+
+  setMotor(pwm_left,pwm_right);
+
+  // -------- odometry --------
+  double ds = (dr + dl)/2.0;
+  double dtheta = (dr - dl)/WHEEL_BASE; // CW正
+
+  x += ds*cos(theta);  // 中心差分 dtheta/2 を削除
+  y += ds*sin(theta);
+  theta += dtheta;
+
+  while(theta>PI) theta-=2*PI;
+  while(theta<-PI) theta+=2*PI;
+
+  double v = ds/dt;
+  double w = dtheta/dt;
+
+  int64_t now = rmw_uros_epoch_nanos();
+  odom_msg.header.stamp.sec = now/1000000000;
+  odom_msg.header.stamp.nanosec = now%1000000000;
+  joint_msg.header.stamp = odom_msg.header.stamp;
+
+  // joint state
+  joint_msg.position.data[0] = 2*PI*l/TICKS_PER_REV/4.0;
+  joint_msg.position.data[1] = 2*PI*r/TICKS_PER_REV/4.0;
+  joint_msg.velocity.data[0] = left_vel;
+  joint_msg.velocity.data[1] = right_vel;
+  RCSOFTCHECK(rcl_publish(&joint_pub,&joint_msg,NULL));
+
+  // odom
+  odom_msg.pose.pose.position.x = x;
+  odom_msg.pose.pose.position.y = y;
+  odom_msg.pose.pose.orientation.z = sin(theta/2.0);
+  odom_msg.pose.pose.orientation.w = cos(theta/2.0);
+  odom_msg.twist.twist.linear.x = v;
+  odom_msg.twist.twist.angular.z = w;
+  RCSOFTCHECK(rcl_publish(&odom_pub,&odom_msg,NULL));
+}
+
+// ---------------- setup ----------------
+void setup(){
+  Serial.begin(115200);
+
+  // エンコーダ・モータピンの初期化（変更なし）
+  pinMode(LEFT_A,INPUT_PULLUP);
+  pinMode(LEFT_B,INPUT_PULLUP);
+  left_last_AB = (digitalRead(LEFT_A)<<1)|digitalRead(LEFT_B);
+  attachInterrupt(digitalPinToInterrupt(LEFT_A),leftEncoder,CHANGE);
+  attachInterrupt(digitalPinToInterrupt(LEFT_B),leftEncoder,CHANGE);
+
+  pinMode(RIGHT_A,INPUT_PULLUP);
+  pinMode(RIGHT_B,INPUT_PULLUP);
+  right_last_AB = (digitalRead(RIGHT_A)<<1)|digitalRead(RIGHT_B);
+  attachInterrupt(digitalPinToInterrupt(RIGHT_A),rightEncoder,CHANGE);
+  attachInterrupt(digitalPinToInterrupt(RIGHT_B),rightEncoder,CHANGE);
+
+  pinMode(LEFT_DIR,OUTPUT);
+  pinMode(RIGHT_DIR,OUTPUT);
+  ledcSetup(LEFT_PWM_CH,PWM_FREQ,PWM_RESOLUTION);
+  ledcSetup(RIGHT_PWM_CH,PWM_FREQ,PWM_RESOLUTION);
+  ledcAttachPin(LEFT_PWM,LEFT_PWM_CH);
+  ledcAttachPin(RIGHT_PWM,RIGHT_PWM_CH);
+
+  // micro-ROSのシリアル通信設定
+  set_microros_transports();
+
+  // 【追加部分 1】PC(Agent)が立ち上がるまでここで待機する
+  // これがないと、Agent不在時にすぐ下のRCCHECKで初期化に失敗し、無限ループ(while(1))でフリーズします
+  while (rmw_uros_ping_agent(100, 1) != RMW_RET_OK) {
+    delay(500);
+  }
+
+  // micro-ROSノードの初期化
+  allocator = rcl_get_default_allocator();
+  RCCHECK(rclc_support_init(&support,0,NULL,&allocator));
+  RCCHECK(rclc_node_init_default(&node,"esp32_diffbot","",&support));
+
+  RCCHECK(rclc_publisher_init_default(&joint_pub,&node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs,msg,JointState),"/joint_states"));
+  RCCHECK(rclc_publisher_init_default(&odom_pub,&node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs,msg,Odometry),"/odom"));
+  RCCHECK(rclc_subscription_init_default(&twist_sub,&node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs,msg,Twist),"/cmd_vel_slow"));
+
+  sensor_msgs__msg__JointState__init(&joint_msg);
+  nav_msgs__msg__Odometry__init(&odom_msg);
+
+  rosidl_runtime_c__String__assign(&odom_msg.header.frame_id,"odom");
+  rosidl_runtime_c__String__assign(&odom_msg.child_frame_id,"base_link");
+  rosidl_runtime_c__String__assign(&joint_msg.header.frame_id,"base_link");
+
+  rosidl_runtime_c__String__Sequence__init(&joint_msg.name,2);
+  rosidl_runtime_c__String__assign(&joint_msg.name.data[0],"left_wheel");
+  rosidl_runtime_c__String__assign(&joint_msg.name.data[1],"right_wheel");
+
+  rosidl_runtime_c__double__Sequence__init(&joint_msg.position,2);
+  rosidl_runtime_c__double__Sequence__init(&joint_msg.velocity,2);
+  rosidl_runtime_c__double__Sequence__init(&joint_msg.effort,2);
+
+  RCCHECK(rclc_timer_init_default(&timer,&support,RCL_MS_TO_NS(CONTROL_PERIOD_MS),timer_callback));
+  RCCHECK(rclc_executor_init(&executor,&support.context,2,&allocator));
+  RCCHECK(rclc_executor_add_timer(&executor,&timer));
+  RCCHECK(rclc_executor_add_subscription(&executor,&twist_sub,&twist_msg,&twist_callback,ON_NEW_DATA));
+
+  // 【修正部分 2】時刻同期もAgentと繋がってから行う。RMW_RET_OK に修正済み。
+  while (rmw_uros_sync_session(1000) != RMW_RET_OK) {
+    delay(500);
+  }
+}
+
+// ---------------- loop ----------------
+void loop(){
+  RCSOFTCHECK(rclc_executor_spin_some(&executor,RCL_MS_TO_NS(50)));
+}
