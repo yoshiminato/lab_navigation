@@ -24,21 +24,87 @@
 double PWM_SCALE = 9.0;
 double MAX_LINEAR_VEL = 0.5;
 
-// ---------------- 通信用構造体 ----------------
-struct SendPacket {
+// ---------------- 通信パケット関連 ----------------
+#define HEADER1 0xAA
+#define HEADER2 0x55
+#define WAIT_FOR_HEADER1 0
+#define WAIT_FOR_HEADER2 1
+#define RECEIVE_DATA 2
+struct CommandPacket {
+  uint8_t header1;
+  uint8_t header2;
   float left_velocity_cmd;
   float right_velocity_cmd;
+  uint8_t checksum; // 簡単なエラーチェック用
 } __attribute__((packed));
 
-struct ReceivePacket {
+struct StatusPacket {
+  uint8_t header1;
+  uint8_t header2;
   float left_position;
   float left_velocity;
   float right_position;
   float right_velocity;
+  uint8_t checksum; // 簡単なエラーチェック用
 } __attribute__((packed));
 
-SendPacket rx_data;
-ReceivePacket tx_data;
+CommandPacket rx_data;
+StatusPacket tx_data;
+
+// 簡単なチェックサム計算 (XORベース)
+uint8_t calculateChecksum(const uint8_t* data, size_t len) {
+  uint8_t cs = 0;
+  for (size_t i = 0; i < len; i++) {
+    cs ^= data[i];
+  }
+  return cs;
+}
+
+bool receivePacket(CommandPacket* packet) {
+
+  static uint8_t buffer[sizeof(CommandPacket)];
+  static size_t  state = WAIT_FOR_HEADER1;
+  static size_t  index = 0;
+
+  while (Serial.available()) {
+    uint8_t byte = Serial.read();
+
+    switch(state) {
+      case WAIT_FOR_HEADER1: // ヘッダー1待ち
+        if (byte == HEADER1) state = WAIT_FOR_HEADER2;
+        break;
+      case WAIT_FOR_HEADER2: // ヘッダー2待ち
+        if (byte == HEADER2) {
+          state = RECEIVE_DATA;
+          index = 0;
+          buffer[index++] = HEADER1;
+          buffer[index++] = HEADER2;
+        } 
+        else state = WAIT_FOR_HEADER1;
+        break;
+      case RECEIVE_DATA: // データ受信中
+        
+        buffer[index++] = byte;
+        if (index < sizeof(CommandPacket)) return false; // まだ完全に受信されていない
+        
+        size_t   len = sizeof(CommandPacket) - 1;   // チェックサムを除いたデータ部分のバイト数
+        uint8_t  cs  = calculateChecksum(buffer, len); // チェックサム計算
+
+        if (byte != cs) {
+          state = WAIT_FOR_HEADER1; // 次のパケット受信に備えて状態をリセット
+          return false; // チェックサムエラー
+        }
+
+        memcpy(packet, buffer, sizeof(CommandPacket)); // 受信したデータを構造体にコピー
+        state = WAIT_FOR_HEADER1; // 次のパケット受信に備えて状態をリセット
+        return true; // 正常に受信完了
+
+        break;
+    }
+  }
+  return false; // パケットがまだ完全に受信されていない
+}
+
 
 // ---------------- グローバル ----------------
 volatile long left_count = 0;
@@ -124,12 +190,7 @@ void setup(){
 // ---------------- loop ----------------
 void loop(){
   // --- 1. PCからの指令を受信 ---
-  if (Serial.available() >= sizeof(SendPacket)) {
-    // 構造体のサイズ分だけ一気にバイナリ読み込み
-    Serial.readBytes((char*)&rx_data, sizeof(SendPacket));
-
-    // 目標速度(rad/s)からPWM値を計算 (簡易的なスカラー倍による開ループ制御の場合)
-    // 実際の実装は以前のコードのPWM_SCALEなどを活用
+  if (receivePacket(&rx_data)) {
     double target_left = rx_data.left_velocity_cmd * WHEEL_RADIUS;
     double target_right = rx_data.right_velocity_cmd * WHEEL_RADIUS;
     
@@ -137,7 +198,7 @@ void loop(){
     int pwm_right = (int)(target_right/PWM_SCALE*MAX_PWM);
     pwm_left  = constrain(pwm_left,-MAX_PWM,MAX_PWM);
     pwm_right = constrain(pwm_right,-MAX_PWM,MAX_PWM);
-
+    
     setMotor(pwm_left, pwm_right);
   }
 
@@ -163,13 +224,20 @@ void loop(){
     double left_vel  = (2 * PI * l_diff / TICKS_PER_REV) / dt;
     double right_vel = (2 * PI * r_diff / TICKS_PER_REV) / dt;
 
+    tx_data.header1 = HEADER1;
+    tx_data.header2 = HEADER2;
     tx_data.left_position  = current_left_pos;
     tx_data.left_velocity  = left_vel;
     tx_data.right_position = current_right_pos;
     tx_data.right_velocity = right_vel;
 
+    size_t   len = sizeof(StatusPacket) - 1; 
+    uint8_t *ptr = (uint8_t*)&tx_data;       
+    uint8_t   cs = calculateChecksum(ptr, len);
+    tx_data.checksum = cs;
+
     // 構造体のメモリをそのまま送信
-    Serial.write((uint8_t*)&tx_data, sizeof(ReceivePacket));
+    Serial.write((uint8_t*)&tx_data, sizeof(StatusPacket));
     
     last_time = current_time;
   }
