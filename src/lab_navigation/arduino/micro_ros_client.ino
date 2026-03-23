@@ -17,12 +17,40 @@
 #define RIGHT_PWM_CH 1
 
 // ---------------- ロボットパラメータ ----------------
-#define WHEEL_RADIUS 0.135
-#define WHEEL_BASE   0.50
+// #define WHEEL_RADIUS 0.135
+// #define WHEEL_BASE   0.50
 #define TICKS_PER_REV 1060.0
 
-double PWM_SCALE = 9.0;
+// double PWM_SCALE = 9.0;
 double MAX_LINEAR_VEL = 0.5;
+
+
+// ---------------- PIDパラメータ ----------------
+#define MIN_INTEGRAL -100.0
+#define MAX_INTEGRAL 100.0
+
+typedef struct {
+  double Kp;          // 比例ゲイン
+  double Ki;          // 積分ゲイン
+  double Kd;          // 微分ゲイン
+  double integral;    // 積分値
+  double prev_error;  // 前回の誤差
+} PIDController;
+
+// PIDコントローラの初期化
+PIDController left_pid = {2.0, 0.0, 0.0, 0.0, 0.0};
+PIDController right_pid = {2.0, 0.0, 0.0, 0.0, 0.0};
+
+// PID制御計算関数
+int computePID(double target_vel, double current_vel, PIDController &pid, double dt) {
+  double error = target_vel - current_vel;
+  pid.integral += error * dt;
+  pid.integral = constrain(pid.integral, MIN_INTEGRAL, MAX_INTEGRAL);
+  double derivative = (error - pid.prev_error) / dt;
+  pid.prev_error = error;
+  double output = pid.Kp * error + pid.Ki * pid.integral + pid.Kd * derivative;
+  return (int)constrain(output, -MAX_PWM, MAX_PWM);
+}
 
 // ---------------- 通信用構造体 ----------------
 struct SendPacket {
@@ -121,24 +149,13 @@ void setup(){
   last_time = millis();
 }
 
+
 // ---------------- loop ----------------
 void loop(){
   // --- 1. PCからの指令を受信 ---
   if (Serial.available() >= sizeof(SendPacket)) {
     // 構造体のサイズ分だけ一気にバイナリ読み込み
     Serial.readBytes((char*)&rx_data, sizeof(SendPacket));
-
-    // 目標速度(rad/s)からPWM値を計算 (簡易的なスカラー倍による開ループ制御の場合)
-    // 実際の実装は以前のコードのPWM_SCALEなどを活用
-    double target_left = rx_data.left_velocity_cmd * WHEEL_RADIUS;
-    double target_right = rx_data.right_velocity_cmd * WHEEL_RADIUS;
-    
-    int pwm_left  = (int)(target_left/PWM_SCALE*MAX_PWM);
-    int pwm_right = (int)(target_right/PWM_SCALE*MAX_PWM);
-    pwm_left  = constrain(pwm_left,-MAX_PWM,MAX_PWM);
-    pwm_right = constrain(pwm_right,-MAX_PWM,MAX_PWM);
-
-    setMotor(pwm_left, pwm_right);
   }
 
   // --- 2. 状態の計算とPCへの送信 ---
@@ -170,6 +187,14 @@ void loop(){
 
     // 構造体のメモリをそのまま送信
     Serial.write((uint8_t*)&tx_data, sizeof(ReceivePacket));
+
+    double target_left_vel = rx_data.left_velocity_cmd;
+    double target_right_vel = rx_data.right_velocity_cmd;
+
+    int pwm_left = computePID(target_left_vel, left_vel, left_pid, dt);
+    int pwm_right = computePID(target_right_vel, right_vel, right_pid, dt);
+
+    setMotor(pwm_left, pwm_right);
     
     last_time = current_time;
   }
