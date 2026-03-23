@@ -24,13 +24,13 @@ def generate_launch_description():
     # Nav2パラメータファイルのパスを指定するためのコマンドを定義
     declare_nav2_params_file_path_cmd = DeclareLaunchArgument(
         'nav2_params_file_path',
-        default_value='/home/user/lab_navigation/src/lab_navigation/params/nav2_params.yaml'
+        default_value='/home/user/lab_navigation_ws/src/lab_navigation/params/nav2_params.yaml'
     )
 
     # localizationパラメータファイルのパスを指定するためのコマンドを定義
     declare_localization_params_file_path_cmd = DeclareLaunchArgument(
         'localization_params_file_path',
-        default_value='/home/user/lab_navigation/src/lab_navigation/params/localization.yaml'
+        default_value='/home/user/lab_navigation_ws/src/lab_navigation/params/localization.yaml'
     )
 
     # # micro-ROSエージェントを起動するためのコマンドを定義
@@ -70,7 +70,7 @@ def generate_launch_description():
             'gnome-terminal', '--tab', '--title=lidar_localization', '--',
             'bash', '-c',
             [
-                'source ~/lidar_localization_ros2_ws/install/setup.bash && ros2 launch lidar_localization_ros2 lidar_localization.launch.py localization_param_dir:=',
+                'ros2 launch lidar_localization_ros2 lidar_localization.launch.py localization_param_dir:=',
                 localization_params_file_path,
                 '; exec bash'
             ]
