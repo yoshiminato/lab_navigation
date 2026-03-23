@@ -94,7 +94,7 @@ hardware_interface::CallbackReturn DiffBotSystemHardware::on_init(
   }
 
   rx_buffer_.resize(sizeof(StatusPacket)); // 受信バッファをStatusPacketのサイズに合わせて初期化
-  std::memset(&rx_data_, 0, sizeof(StatusPacket)); // 受信データ構造体をゼロ初期化
+  rx_data_ = {}; // 受信データ構造体をゼロ初期化
 
   return hardware_interface::CallbackReturn::SUCCESS;
 }
@@ -241,7 +241,7 @@ bool DiffBotSystemHardware::receive_packet(StatusPacket* packet) {
     try {
       serial_port_.ReadByte(byte);
     } catch (...) {
-      return hardware_interface::return_type::ERROR;
+      return false;
     }
 
     switch (receive_state_)
