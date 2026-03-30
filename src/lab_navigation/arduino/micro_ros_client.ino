@@ -10,8 +10,8 @@
 #define LEFT_DIR 5
 #define RIGHT_PWM 17
 #define RIGHT_DIR 18
-#define MAX_PWM 255
-#define MIN_PWM 0
+#define MAX_PWM 40
+#define MIN_PWM 15
 #define PWM_FREQ 20000
 #define PWM_RESOLUTION 8
 #define LEFT_PWM_CH 0
@@ -28,6 +28,10 @@ const float VOLTAGE_DIVIDER_RATIO = (R1 + R2) / R2;
 
 double PWM_SCALE_LEFT  = 9e-2;
 double PWM_SCALE_RIGHT = 8.4e-2;
+
+
+
+#define MAX_VEL 0.26
 
 // ---------------- 通信パケット関連 ----------------
 #define HEADER1 0xAA
@@ -51,7 +55,7 @@ struct StatusPacket {
   float right_position;
   float right_velocity;
   float battery_voltage;
-  uint8_t checksum; // 簡単なエラーチェック用
+  uint8_t checksum;
 } __attribute__((packed));
 
 CommandPacket rx_data;
@@ -91,14 +95,14 @@ bool receivePacket(CommandPacket* packet) {
       case RECEIVE_DATA: // データ受信中
         
         buffer[index++] = byte;
-        if (index < sizeof(CommandPacket)) return false; // まだ完全に受信されていない
+        if (index < sizeof(CommandPacket)) break; // まだ完全に受信されていない
         
         size_t   len = sizeof(CommandPacket) - 1;   // チェックサムを除いたデータ部分のバイト数
         uint8_t  cs  = calculateChecksum(buffer, len); // チェックサム計算
 
         if (byte != cs) {
           state = WAIT_FOR_HEADER1; // 次のパケット受信に備えて状態をリセット
-          return false; // チェックサムエラー
+          break; // チェックサムエラー
         }
 
         memcpy(packet, buffer, sizeof(CommandPacket)); // 受信したデータを構造体にコピー
@@ -152,18 +156,31 @@ void IRAM_ATTR rightEncoder(){
   right_last_AB = AB;
 }
 
+int calcPWM(float vel){
+  if (vel == 0.0f) return 0; // 停止指令の場合は確実に0を返す
+  const int scale = 10;
+  long scaled_vel = (long)(vel*scale);
+  long min_in     = 0;
+  long max_in     = (long)(MAX_VEL/WHEEL_RADIUS)*scale;
+  return (int)map(scaled_vel, min_in, max_in, MIN_PWM, MAX_PWM);
+}
+
 // ---------------- モータ ----------------
-void setMotor(int l_pwm,int r_pwm){
-  if(abs(l_pwm)<MIN_PWM) ledcWrite(LEFT_PWM_CH,0);
-  else{
-    digitalWrite(LEFT_DIR,l_pwm>0);
-    ledcWrite(LEFT_PWM_CH,abs(l_pwm));
-  }
-  if(abs(r_pwm)<MIN_PWM) ledcWrite(RIGHT_PWM_CH,0);
-  else{
-    digitalWrite(RIGHT_DIR,r_pwm>0);
-    ledcWrite(RIGHT_PWM_CH,abs(r_pwm));
-  }
+void setMotor(float l_vel, float r_vel){
+  // if(abs(l_pwm)<MIN_PWM) ledcWrite(LEFT_PWM_CH,0);
+  // else{
+  //   digitalWrite(LEFT_DIR,l_pwm>0);
+  //   ledcWrite(LEFT_PWM_CH,abs(l_pwm));
+  // }
+  // if(abs(r_pwm)<MIN_PWM) ledcWrite(RIGHT_PWM_CH,0);
+  // else{
+  //   digitalWrite(RIGHT_DIR,r_pwm>0);
+  //   ledcWrite(RIGHT_PWM_CH,abs(r_pwm));
+  // }
+  digitalWrite(LEFT_DIR ,l_vel>0);
+  ledcWrite(LEFT_PWM_CH, calcPWM(abs(l_vel)));
+  digitalWrite(RIGHT_DIR,r_vel>0);
+  ledcWrite(RIGHT_PWM_CH,calcPWM(abs(r_vel)));
 }
 
 // ---------------- setup ----------------
@@ -197,15 +214,13 @@ void setup(){
 void loop(){
   // --- 1. PCからの指令を受信 ---
   if (receivePacket(&rx_data)) {
-    double target_left = rx_data.left_velocity_cmd * WHEEL_RADIUS;
-    double target_right = rx_data.right_velocity_cmd * WHEEL_RADIUS;
-    
-    int pwm_left  = (int)(rx_data.left_velocity_cmd*PWM_SCALE_LEFT*MAX_PWM);
-    int pwm_right = (int)(rx_data.right_velocity_cmd*PWM_SCALE_RIGHT*MAX_PWM);
-    pwm_left  = constrain(pwm_left,-MAX_PWM,MAX_PWM);
-    pwm_right = constrain(pwm_right,-MAX_PWM,MAX_PWM);
-    
-    setMotor(pwm_left, pwm_right);
+    // int pwm_left  = (int)(rx_data.left_velocity_cmd*PWM_SCALE_LEFT*MAX_PWM);
+    // int pwm_right = (int)(rx_data.right_velocity_cmd*PWM_SCALE_RIGHT*MAX_PWM);
+    // pwm_left  = constrain(pwm_left,-MAX_PWM,MAX_PWM);
+    // pwm_right = constrain(pwm_right,-MAX_PWM,MAX_PWM);
+    // setMotor(pwm_left, pwm_right);
+    setMotor(rx_data.left_velocity_cmd, rx_data.right_velocity_cmd);
+
   }
 
   // --- 2. 状態の計算とPCへの送信 ---
