@@ -110,7 +110,7 @@ private:
   std::vector<double> hw_velocities_;
 
   LibSerial::SerialPort serial_port_;
-  std::string device_name_ = "/dev/ttyUSB1"; 
+  std::string device_name_ = "/dev/ttyUSB0"; 
 };
 
 }  // namespace ros2_control_diff_drive
