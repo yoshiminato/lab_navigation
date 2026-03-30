@@ -156,31 +156,31 @@ void IRAM_ATTR rightEncoder(){
   right_last_AB = AB;
 }
 
-int calcPWM(float vel){
-  if (vel == 0.0f) return 0; // 停止指令の場合は確実に0を返す
-  const int scale = 10;
-  long scaled_vel = (long)(vel*scale);
-  long min_in     = 0;
-  long max_in     = (long)(MAX_VEL/WHEEL_RADIUS)*scale;
-  return (int)map(scaled_vel, min_in, max_in, MIN_PWM, MAX_PWM);
-}
+// ---------------- PID制御変数 ----------------
+float Kp = 1.0;
+float Ki = 0.0;
+float Kd = 0.0;
+
+float left_err_sum = 0.0;
+float right_err_sum = 0.0;
+float left_prev_err = 0.0;
+float right_prev_err = 0.0;
 
 // ---------------- モータ ----------------
-void setMotor(float l_vel, float r_vel){
-  // if(abs(l_pwm)<MIN_PWM) ledcWrite(LEFT_PWM_CH,0);
-  // else{
-  //   digitalWrite(LEFT_DIR,l_pwm>0);
-  //   ledcWrite(LEFT_PWM_CH,abs(l_pwm));
-  // }
-  // if(abs(r_pwm)<MIN_PWM) ledcWrite(RIGHT_PWM_CH,0);
-  // else{
-  //   digitalWrite(RIGHT_DIR,r_pwm>0);
-  //   ledcWrite(RIGHT_PWM_CH,abs(r_pwm));
-  // }
-  digitalWrite(LEFT_DIR ,l_vel>0);
-  ledcWrite(LEFT_PWM_CH, calcPWM(abs(l_vel)));
-  digitalWrite(RIGHT_DIR,r_vel>0);
-  ledcWrite(RIGHT_PWM_CH,calcPWM(abs(r_vel)));
+void setMotor(int l_pwm, int r_pwm){
+  if (l_pwm == 0) {
+    ledcWrite(LEFT_PWM_CH, 0);
+  } else {
+    digitalWrite(LEFT_DIR, l_pwm > 0);
+    ledcWrite(LEFT_PWM_CH, constrain(abs(l_pwm), MIN_PWM, MAX_PWM));
+  }
+  
+  if (r_pwm == 0) {
+    ledcWrite(RIGHT_PWM_CH, 0);
+  } else {
+    digitalWrite(RIGHT_DIR, r_pwm > 0);
+    ledcWrite(RIGHT_PWM_CH, constrain(abs(r_pwm), MIN_PWM, MAX_PWM));
+  }
 }
 
 // ---------------- setup ----------------
@@ -213,15 +213,7 @@ void setup(){
 // ---------------- loop ----------------
 void loop(){
   // --- 1. PCからの指令を受信 ---
-  if (receivePacket(&rx_data)) {
-    // int pwm_left  = (int)(rx_data.left_velocity_cmd*PWM_SCALE_LEFT*MAX_PWM);
-    // int pwm_right = (int)(rx_data.right_velocity_cmd*PWM_SCALE_RIGHT*MAX_PWM);
-    // pwm_left  = constrain(pwm_left,-MAX_PWM,MAX_PWM);
-    // pwm_right = constrain(pwm_right,-MAX_PWM,MAX_PWM);
-    // setMotor(pwm_left, pwm_right);
-    setMotor(rx_data.left_velocity_cmd, rx_data.right_velocity_cmd);
-
-  }
+  
 
   // --- 2. 状態の計算とPCへの送信 ---
   unsigned long current_time = millis();
@@ -245,6 +237,40 @@ void loop(){
     
     double left_vel  = (2 * PI * l_diff / TICKS_PER_REV) / dt;
     double right_vel = (2 * PI * r_diff / TICKS_PER_REV) / dt;
+
+    if (!receivePacket(&rx_data)) return;
+
+    // ---------------- PID制御によるPWM出力 ----------------
+    int l_pwm = 0;
+    int r_pwm = 0;
+
+    if (rx_data.left_velocity_cmd == 0.0f) {
+      left_err_sum = 0.0;
+      left_prev_err = 0.0;
+      l_pwm = 0;
+    } else {
+      float err = rx_data.left_velocity_cmd - left_vel;
+      left_err_sum += err * dt;
+      left_err_sum = constrain(left_err_sum, -MAX_PWM / Ki, MAX_PWM / Ki); // アンチワインドアップ
+      float d_err = (err - left_prev_err) / dt;
+      left_prev_err = err;
+      l_pwm = (int)((Kp * err) + (Ki * left_err_sum) + (Kd * d_err));
+    }
+
+    if (rx_data.right_velocity_cmd == 0.0f) {
+      right_err_sum = 0.0;
+      right_prev_err = 0.0;
+      r_pwm = 0;
+    } else {
+      float err = rx_data.right_velocity_cmd - right_vel;
+      right_err_sum += err * dt;
+      right_err_sum = constrain(right_err_sum, -MAX_PWM / Ki, MAX_PWM / Ki); // アンチワインドアップ
+      float d_err = (err - right_prev_err) / dt;
+      right_prev_err = err;
+      r_pwm = (int)((Kp * err) + (Ki * right_err_sum) + (Kd * d_err));
+    }
+
+    setMotor(l_pwm, r_pwm);
 
     uint32_t pin_millivolts = analogReadMilliVolts(BATTERY);
     float pin_voltage = pin_millivolts / 1000.0;
