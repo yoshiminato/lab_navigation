@@ -9,9 +9,9 @@
 #define LEFT_PWM 16
 #define LEFT_DIR 18
 #define RIGHT_PWM 17
-#define RIGHT_DIR 5
-#define MAX_PWM 40
-#define MIN_PWM 15
+#define RIGHT_DIR 2
+#define MAX_PWM 50
+#define MIN_PWM 5
 #define PWM_FREQ 20000
 #define PWM_RESOLUTION 8
 #define LEFT_PWM_CH 0
@@ -25,13 +25,6 @@ const float VOLTAGE_DIVIDER_RATIO = (R1 + R2) / R2;
 #define WHEEL_RADIUS 0.135
 #define WHEEL_BASE   0.50
 #define TICKS_PER_REV 1060.0
-
-double PWM_SCALE_LEFT  = 9e-2;
-double PWM_SCALE_RIGHT = 9e-2;
-
-
-
-#define MAX_VEL 0.26
 
 // ---------------- 通信パケット関連 ----------------
 #define HEADER1 0xAA
@@ -157,8 +150,8 @@ void IRAM_ATTR rightEncoder(){
 }
 
 // ---------------- PID制御変数 ----------------
-float Kp = 1.0;
-float Ki = 0.0;
+float Kp =25.0;
+float Ki = 1.0;
 float Kd = 0.0;
 
 float left_err_sum = 0.0;
@@ -168,14 +161,14 @@ float right_prev_err = 0.0;
 
 // ---------------- モータ ----------------
 void setMotor(int l_pwm, int r_pwm){
-  if (l_pwm == 0) {
+  if (abs(l_pwm) < MIN_PWM) {
     ledcWrite(LEFT_PWM_CH, 0);
   } else {
     digitalWrite(LEFT_DIR, l_pwm > 0);
     ledcWrite(LEFT_PWM_CH, constrain(abs(l_pwm), MIN_PWM, MAX_PWM));
   }
   
-  if (r_pwm == 0) {
+  if (abs(r_pwm) < MIN_PWM) {
     ledcWrite(RIGHT_PWM_CH, 0);
   } else {
     digitalWrite(RIGHT_DIR, r_pwm > 0);
