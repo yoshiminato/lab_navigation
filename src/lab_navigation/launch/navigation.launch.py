@@ -4,6 +4,8 @@ from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+import os
+from ament_index_python.packages import get_package_share_directory
 
 
 
@@ -88,7 +90,7 @@ def generate_launch_description():
         output='screen'
     )
 
-    # topic_tools throttle を起動（別ターミナルではない、通常起動）
+    # topic_tools throttle を起動
     throttle = ExecuteProcess(
         cmd=[
             'ros2', 'run', 'topic_tools', 'throttle', 'messages',
@@ -98,10 +100,11 @@ def generate_launch_description():
     )
 
     # map_serverを起動するためのコマンドを定義
+    nav2_bringup_dir = get_package_share_directory('nav2_bringup')
     map_yaml_file_path = LaunchConfiguration('map_yaml_file_path')
     map_server = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            '/home/user/navigation_ws/install/nav2_bringup/share/nav2_bringup/launch/localization_launch.py'
+            os.path.join(nav2_bringup_dir, 'launch', 'localization_launch.py')
         ),
         launch_arguments={
             'map': map_yaml_file_path
