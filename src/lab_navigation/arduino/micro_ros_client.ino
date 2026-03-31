@@ -73,10 +73,11 @@ bool receivePacket(CommandPacket* packet) {
     uint8_t byte = Serial.read();
 
     switch(state) {
-      case WAIT_FOR_HEADER1: // ヘッダー1待ち
+      // ヘッダー待ちの場合
+      case WAIT_FOR_HEADER1:
         if (byte == HEADER1) state = WAIT_FOR_HEADER2;
         break;
-      case WAIT_FOR_HEADER2: // ヘッダー2待ち
+      case WAIT_FOR_HEADER2: 
         if (byte == HEADER2) {
           state = RECEIVE_DATA;
           index = 0;
@@ -85,27 +86,31 @@ bool receivePacket(CommandPacket* packet) {
         } 
         else state = WAIT_FOR_HEADER1;
         break;
-      case RECEIVE_DATA: // データ受信中
-        
-        buffer[index++] = byte;
-        if (index < sizeof(CommandPacket)) break; // まだ完全に受信されていない
-        
-        size_t   len = sizeof(CommandPacket) - 1;   // チェックサムを除いたデータ部分のバイト数
-        uint8_t  cs  = calculateChecksum(buffer, len); // チェックサム計算
 
+      // データ受信中 
+      case RECEIVE_DATA:
+        
+        // データ格納
+        buffer[index++] = byte;
+        if (index < sizeof(CommandPacket)) break;
+        
+        // チェックサムの検証
+        size_t   len = sizeof(CommandPacket) - 1;
+        uint8_t  cs  = calculateChecksum(buffer, len);
         if (byte != cs) {
-          state = WAIT_FOR_HEADER1; // 次のパケット受信に備えて状態をリセット
-          break; // チェックサムエラー
+          state = WAIT_FOR_HEADER1;
+          break;
         }
 
-        memcpy(packet, buffer, sizeof(CommandPacket)); // 受信したデータを構造体にコピー
-        state = WAIT_FOR_HEADER1; // 次のパケット受信に備えて状態をリセット
-        return true; // 正常に受信完了
+        // 受信に成功した場合はglobal変数packetに受信パケットをコピーして状態をリセット
+        memcpy(packet, buffer, sizeof(CommandPacket));
+        state = WAIT_FOR_HEADER1; 
+        return true;
 
         break;
     }
   }
-  return false; // パケットがまだ完全に受信されていない
+  return false;
 }
 
 
@@ -205,35 +210,35 @@ void setup(){
 
 // ---------------- loop ----------------
 void loop(){
-  // --- 1. PCからの指令を受信 ---
   
-
-  // --- 2. 状態の計算とPCへの送信 ---
   unsigned long current_time = millis();
   double dt = (current_time - last_time) / 1000.0;
   
-  if (dt >= 0.05) { // 約20Hz (50ms) で送信
+  // 20Hzで計算
+  if (dt >= 0.05) {
 
+    // エンコーダ出力の取得
     noInterrupts();
     long l = left_count;
     long r = right_count;
     interrupts();
 
+    // エンコーダの差分を計算
     double l_diff = (l - prev_left) / 4.0;
     double r_diff = (r - prev_right) / 4.0;
     prev_left = l;
     prev_right = r;
 
-    // pos: 全回転角度 (rad), vel: 角速度 (rad/s)
+    // 車輪の角度と角速度の計算
     current_left_pos  = 2 * PI * l / TICKS_PER_REV / 4.0;
     current_right_pos = 2 * PI * r / TICKS_PER_REV / 4.0;
-    
     double left_vel  = (2 * PI * l_diff / TICKS_PER_REV) / dt;
     double right_vel = (2 * PI * r_diff / TICKS_PER_REV) / dt;
 
+    // コマンドの受信
     if (!receivePacket(&rx_data)) return;
 
-    // ---------------- PID制御によるPWM出力 ----------------
+    // PID制御
     int l_pwm = 0;
     int r_pwm = 0;
 
@@ -265,10 +270,13 @@ void loop(){
 
     setMotor(l_pwm, r_pwm);
 
+    // バッテリー電圧の測定
     uint32_t pin_millivolts = analogReadMilliVolts(BATTERY);
     float pin_voltage = pin_millivolts / 1000.0;
-    float battery_voltage = pin_voltage * VOLTAGE_DIVIDER_RATIO; // 実際のバッテリー電圧
+    float battery_voltage = pin_voltage * VOLTAGE_DIVIDER_RATIO;
 
+
+    // 状態パケットの作成と送信
     tx_data.header1 = HEADER1;
     tx_data.header2 = HEADER2;
     tx_data.left_position  = current_left_pos;
@@ -282,7 +290,6 @@ void loop(){
     uint8_t   cs = calculateChecksum(ptr, len);
     tx_data.checksum = cs;
 
-    // 構造体のメモリをそのまま送信
     Serial.write((uint8_t*)&tx_data, sizeof(StatusPacket));
     
     last_time = current_time;
