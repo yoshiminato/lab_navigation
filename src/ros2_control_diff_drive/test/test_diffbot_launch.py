@@ -57,7 +57,11 @@ def generate_test_description():
                 "launch/diffbot.launch.py",
             )
         ),
-        launch_arguments={"gui": "False"}.items(),
+        launch_arguments={
+            "gui": "False",
+            "use_mock_hardware": "true",
+            "start_micro_ros_agent": "false",
+        }.items(),
     )
 
     return LaunchDescription([launch_include, ReadyToTest()])

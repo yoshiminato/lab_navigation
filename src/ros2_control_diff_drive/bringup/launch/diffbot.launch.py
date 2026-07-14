@@ -16,7 +16,12 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, RegisterEventHandler
 from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit
-from launch.substitutions import Command, FindExecutable, PathJoinSubstitution, LaunchConfiguration
+from launch.substitutions import (
+    Command,
+    FindExecutable,
+    LaunchConfiguration,
+    PathJoinSubstitution,
+)
 
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -39,10 +44,33 @@ def generate_launch_description():
             description="Start robot with mock hardware mirroring command to its states.",
         )
     )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "start_micro_ros_agent",
+            default_value="false",
+            description="Start the serial micro-ROS Agent for the ESP32.",
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "micro_ros_device",
+            default_value="/dev/ttyUSB0",
+            description="Serial device connected to the ESP32.",
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "micro_ros_baudrate",
+            default_value="921600",
+            description="Serial baud rate shared with the ESP32 sketch.",
+        )
+    )
 
     # Initialize Arguments
-    gui = LaunchConfiguration("gui")
     use_mock_hardware = LaunchConfiguration("use_mock_hardware")
+    start_micro_ros_agent = LaunchConfiguration("start_micro_ros_agent")
+    micro_ros_device = LaunchConfiguration("micro_ros_device")
+    micro_ros_baudrate = LaunchConfiguration("micro_ros_baudrate")
 
     # Get URDF via xacro
     robot_description_content = Command(
@@ -66,8 +94,18 @@ def generate_launch_description():
             "diffbot_controllers.yaml",
         ]
     )
-    rviz_config_file = PathJoinSubstitution(
-        [FindPackageShare("ros2_control_diff_drive"), "rviz", "diffbot.rviz"]
+    micro_ros_agent = Node(
+        package="micro_ros_agent",
+        executable="micro_ros_agent",
+        arguments=[
+            "serial",
+            "--dev",
+            micro_ros_device,
+            "-b",
+            micro_ros_baudrate,
+        ],
+        output="screen",
+        condition=IfCondition(start_micro_ros_agent),
     )
 
     control_node = Node(
@@ -87,15 +125,6 @@ def generate_launch_description():
         output="both",
         parameters=[robot_description],
     )
-    # rviz_node = Node(
-    #     package="rviz2",
-    #     executable="rviz2",
-    #     name="rviz2",
-    #     output="log",
-    #     arguments=["-d", rviz_config_file],
-    #     condition=IfCondition(gui),
-    # )
-
     joint_state_broadcaster_spawner = Node(
         package="controller_manager",
         executable="spawner",
@@ -108,16 +137,6 @@ def generate_launch_description():
         arguments=["diffbot_base_controller", "--controller-manager", "/controller_manager"],
     )
 
-    # # Delay rviz start after `joint_state_broadcaster`
-    # delay_rviz_after_joint_state_broadcaster_spawner = RegisterEventHandler(
-    #     event_handler=OnProcessExit(
-    #         target_action=joint_state_broadcaster_spawner,
-    #         on_exit=[rviz_node],
-    #     )
-    # )
-
-    
-
     # Delay start of robot_controller after `joint_state_broadcaster`
     delay_robot_controller_spawner_after_joint_state_broadcaster_spawner = RegisterEventHandler(
         event_handler=OnProcessExit(
@@ -127,10 +146,10 @@ def generate_launch_description():
     )
 
     nodes = [
+        micro_ros_agent,
         control_node,
         robot_state_pub_node,
         joint_state_broadcaster_spawner,
-        # delay_rviz_after_joint_state_broadcaster_spawner,
         delay_robot_controller_spawner_after_joint_state_broadcaster_spawner,
     ]
 
