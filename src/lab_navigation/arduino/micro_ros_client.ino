@@ -1,6 +1,7 @@
 #include <Arduino.h>
 
 // ---------------- ハードウェア ----------------
+#define BATTERY 34
 #define LEFT_A 13
 #define LEFT_B 14
 #define RIGHT_A 27
@@ -9,36 +10,104 @@
 #define LEFT_DIR 5
 #define RIGHT_PWM 17
 #define RIGHT_DIR 18
-#define MAX_PWM 255
-#define MIN_PWM 0
+#define MAX_PWM 50
+#define MIN_PWM 5
 #define PWM_FREQ 20000
 #define PWM_RESOLUTION 8
 #define LEFT_PWM_CH 0
 #define RIGHT_PWM_CH 1
+
+#define R1 99000
+#define R2 10000
+const float VOLTAGE_DIVIDER_RATIO = (R1 + R2) / R2;
 
 // ---------------- ロボットパラメータ ----------------
 #define WHEEL_RADIUS 0.135
 #define WHEEL_BASE   0.50
 #define TICKS_PER_REV 1060.0
 
-double PWM_SCALE = 9.0;
-double MAX_LINEAR_VEL = 0.5;
-
-// ---------------- 通信用構造体 ----------------
-struct SendPacket {
+// ---------------- 通信パケット関連 ----------------
+#define HEADER1 0xAA
+#define HEADER2 0x55
+#define WAIT_FOR_HEADER1 0
+#define WAIT_FOR_HEADER2 1
+#define RECEIVE_DATA 2
+struct CommandPacket {
+  uint8_t header1;
+  uint8_t header2;
   float left_velocity_cmd;
   float right_velocity_cmd;
+  uint8_t checksum; // 簡単なエラーチェック用
 } __attribute__((packed));
 
-struct ReceivePacket {
+struct StatusPacket {
+  uint8_t header1;
+  uint8_t header2;
   float left_position;
   float left_velocity;
   float right_position;
   float right_velocity;
+  float battery_voltage;
+  uint8_t checksum; // 簡単なエラーチェック用
 } __attribute__((packed));
 
-SendPacket rx_data;
-ReceivePacket tx_data;
+CommandPacket rx_data;
+StatusPacket tx_data;
+
+// 簡単なチェックサム計算 (XORベース)
+uint8_t calculateChecksum(const uint8_t* data, size_t len) {
+  uint8_t cs = 0;
+  for (size_t i = 0; i < len; i++) {
+    cs ^= data[i];
+  }
+  return cs;
+}
+
+bool receivePacket(CommandPacket* packet) {
+
+  static uint8_t buffer[sizeof(CommandPacket)];
+  static size_t  state = WAIT_FOR_HEADER1;
+  static size_t  index = 0;
+
+  while (Serial.available()) {
+    uint8_t byte = Serial.read();
+
+    switch(state) {
+      case WAIT_FOR_HEADER1: // ヘッダー1待ち
+        if (byte == HEADER1) state = WAIT_FOR_HEADER2;
+        break;
+      case WAIT_FOR_HEADER2: // ヘッダー2待ち
+        if (byte == HEADER2) {
+          state = RECEIVE_DATA;
+          index = 0;
+          buffer[index++] = HEADER1;
+          buffer[index++] = HEADER2;
+        }
+        else state = WAIT_FOR_HEADER1;
+        break;
+      case RECEIVE_DATA: // データ受信中
+
+        buffer[index++] = byte;
+        if (index < sizeof(CommandPacket)) break; // まだ完全に受信されていない
+
+        size_t   len = sizeof(CommandPacket) - 1;   // チェックサムを除いたデータ部分のバイト数
+        uint8_t  cs  = calculateChecksum(buffer, len); // チェックサム計算
+
+        if (byte != cs) {
+          state = WAIT_FOR_HEADER1; // 次のパケット受信に備えて状態をリセット
+          break; // チェックサムエラー
+        }
+
+        memcpy(packet, buffer, sizeof(CommandPacket)); // 受信したデータを構造体にコピー
+        state = WAIT_FOR_HEADER1; // 次のパケット受信に備えて状態をリセット
+        return true; // 正常に受信完了
+
+        break;
+    }
+  }
+  return false; // パケットがまだ完全に受信されていない
+}
+
 
 // ---------------- グローバル ----------------
 volatile long left_count = 0;
@@ -52,6 +121,7 @@ unsigned long last_time = 0;
 
 double current_left_pos = 0;
 double current_right_pos = 0;
+
 
 // ---------------- エンコーダ ----------------
 void IRAM_ATTR leftEncoder(){
@@ -80,17 +150,30 @@ void IRAM_ATTR rightEncoder(){
   right_last_AB = AB;
 }
 
+// ---------------- PID制御変数 ----------------
+float Kp =25.0;
+float Ki = 1.0;
+float Kd = 0.0;
+
+float left_err_sum = 0.0;
+float right_err_sum = 0.0;
+float left_prev_err = 0.0;
+float right_prev_err = 0.0;
+
 // ---------------- モータ ----------------
-void setMotor(int l_pwm,int r_pwm){
-  if(abs(l_pwm)<MIN_PWM) ledcWrite(LEFT_PWM_CH,0);
-  else{
-    digitalWrite(LEFT_DIR,l_pwm>0);
-    ledcWrite(LEFT_PWM_CH,abs(l_pwm));
+void setMotor(int l_pwm, int r_pwm){
+  if (abs(l_pwm) < MIN_PWM) {
+    ledcWrite(LEFT_PWM_CH, 0);
+  } else {
+    digitalWrite(LEFT_DIR, l_pwm > 0);
+    ledcWrite(LEFT_PWM_CH, constrain(abs(l_pwm), MIN_PWM, MAX_PWM));
   }
-  if(abs(r_pwm)<MIN_PWM) ledcWrite(RIGHT_PWM_CH,0);
-  else{
-    digitalWrite(RIGHT_DIR,r_pwm>0);
-    ledcWrite(RIGHT_PWM_CH,abs(r_pwm));
+
+  if (abs(r_pwm) < MIN_PWM) {
+    ledcWrite(RIGHT_PWM_CH, 0);
+  } else {
+    digitalWrite(RIGHT_DIR, r_pwm > 0);
+    ledcWrite(RIGHT_PWM_CH, constrain(abs(r_pwm), MIN_PWM, MAX_PWM));
   }
 }
 
@@ -99,8 +182,8 @@ void setup(){
   Serial.begin(115200);
 
   // エンコーダ・モータピンの初期化
-  pinMode(LEFT_A,INPUT_PULLUP);
-  pinMode(LEFT_B,INPUT_PULLUP);
+  pinMode(LEFT_A,INPUT);
+  pinMode(LEFT_B,INPUT);
   left_last_AB = (digitalRead(LEFT_A)<<1)|digitalRead(LEFT_B);
   attachInterrupt(digitalPinToInterrupt(LEFT_A),leftEncoder,CHANGE);
   attachInterrupt(digitalPinToInterrupt(LEFT_B),leftEncoder,CHANGE);
@@ -124,28 +207,14 @@ void setup(){
 // ---------------- loop ----------------
 void loop(){
   // --- 1. PCからの指令を受信 ---
-  if (Serial.available() >= sizeof(SendPacket)) {
-    // 構造体のサイズ分だけ一気にバイナリ読み込み
-    Serial.readBytes((char*)&rx_data, sizeof(SendPacket));
 
-    // 目標速度(rad/s)からPWM値を計算 (簡易的なスカラー倍による開ループ制御の場合)
-    // 実際の実装は以前のコードのPWM_SCALEなどを活用
-    double target_left = rx_data.left_velocity_cmd * WHEEL_RADIUS;
-    double target_right = rx_data.right_velocity_cmd * WHEEL_RADIUS;
-    
-    int pwm_left  = (int)(target_left/PWM_SCALE*MAX_PWM);
-    int pwm_right = (int)(target_right/PWM_SCALE*MAX_PWM);
-    pwm_left  = constrain(pwm_left,-MAX_PWM,MAX_PWM);
-    pwm_right = constrain(pwm_right,-MAX_PWM,MAX_PWM);
-
-    setMotor(pwm_left, pwm_right);
-  }
 
   // --- 2. 状態の計算とPCへの送信 ---
   unsigned long current_time = millis();
   double dt = (current_time - last_time) / 1000.0;
   
   if (dt >= 0.05) { // 約20Hz (50ms) で送信
+
     noInterrupts();
     long l = left_count;
     long r = right_count;
@@ -163,13 +232,59 @@ void loop(){
     double left_vel  = (2 * PI * l_diff / TICKS_PER_REV) / dt;
     double right_vel = (2 * PI * r_diff / TICKS_PER_REV) / dt;
 
+    if (!receivePacket(&rx_data)) return;
+
+    // ---------------- PID制御によるPWM出力 ----------------
+    int l_pwm = 0;
+    int r_pwm = 0;
+
+    if (rx_data.left_velocity_cmd == 0.0f) {
+      left_err_sum = 0.0;
+      left_prev_err = 0.0;
+      l_pwm = 0;
+    } else {
+      float err = rx_data.left_velocity_cmd - left_vel;
+      left_err_sum += err * dt;
+      left_err_sum = constrain(left_err_sum, -MAX_PWM / Ki, MAX_PWM / Ki); // アンチワインドアップ
+      float d_err = (err - left_prev_err) / dt;
+      left_prev_err = err;
+      l_pwm = (int)((Kp * err) + (Ki * left_err_sum) + (Kd * d_err));
+    }
+
+    if (rx_data.right_velocity_cmd == 0.0f) {
+      right_err_sum = 0.0;
+      right_prev_err = 0.0;
+      r_pwm = 0;
+    } else {
+      float err = rx_data.right_velocity_cmd - right_vel;
+      right_err_sum += err * dt;
+      right_err_sum = constrain(right_err_sum, -MAX_PWM / Ki, MAX_PWM / Ki); // アンチワインドアップ
+      float d_err = (err - right_prev_err) / dt;
+      right_prev_err = err;
+      r_pwm = (int)((Kp * err) + (Ki * right_err_sum) + (Kd * d_err));
+    }
+
+    setMotor(l_pwm, r_pwm);
+
+    uint32_t pin_millivolts = analogReadMilliVolts(BATTERY);
+    float pin_voltage = pin_millivolts / 1000.0;
+    float battery_voltage = pin_voltage * VOLTAGE_DIVIDER_RATIO; // 実際のバッテリー電圧
+
+    tx_data.header1 = HEADER1;
+    tx_data.header2 = HEADER2;
     tx_data.left_position  = current_left_pos;
     tx_data.left_velocity  = left_vel;
     tx_data.right_position = current_right_pos;
     tx_data.right_velocity = right_vel;
+    tx_data.battery_voltage = battery_voltage;
+
+    size_t   len = sizeof(StatusPacket) - 1;
+    uint8_t *ptr = (uint8_t*)&tx_data;
+    uint8_t   cs = calculateChecksum(ptr, len);
+    tx_data.checksum = cs;
 
     // 構造体のメモリをそのまま送信
-    Serial.write((uint8_t*)&tx_data, sizeof(ReceivePacket));
+    Serial.write((uint8_t*)&tx_data, sizeof(StatusPacket));
     
     last_time = current_time;
   }

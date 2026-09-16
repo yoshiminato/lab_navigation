@@ -12,13 +12,13 @@ def generate_launch_description():
     # PCDファイルのパスを指定するためのコマンドを定義
     declare_pcd_file_path_cmd = DeclareLaunchArgument(
         'pcd_file_path',
-        default_value='/home/user/pcd/hallway.pcd'
+        default_value='/home/user/pcd/hv_building_lab/hv_building_lab.pcd'
     )
 
     # 地図のyamlファイルのパスを指定するためのコマンドを定義
     declare_map_yaml_file_path_cmd = DeclareLaunchArgument(
         'map_yaml_file_path',
-        default_value='/home/user/map/hallway/hallway.yaml'
+        default_value='/home/user/map/hv_building_lab/hv_building_lab.yaml'
     )
 
     # Nav2パラメータファイルのパスを指定するためのコマンドを定義

@@ -93,6 +93,10 @@ hardware_interface::CallbackReturn DiffBotSystemHardware::on_init(
     }
   }
 
+  rx_buffer_.resize(sizeof(StatusPacket));
+  node_ = rclcpp::Node::make_shared("diffbot_hw_node");
+  battery_pub_ = node_->create_publisher<std_msgs::msg::Float32>("battery_level", 10);
+
   return hardware_interface::CallbackReturn::SUCCESS;
 }
 
@@ -180,27 +184,22 @@ hardware_interface::CallbackReturn DiffBotSystemHardware::on_deactivate(
 hardware_interface::return_type DiffBotSystemHardware::read(
   const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
 {
-  if (serial_port_.IsDataAvailable()) {
-    ReceivePacket rx_data;
-    std::vector<uint8_t> rx_buffer;
-    
-    try {
-      // シリアル通信でデータを受信
-      serial_port_.Read(rx_buffer, sizeof(rx_data));
-      // 受信データサイズが構造体サイズと一致するか確認
-      if (rx_buffer.size() == sizeof(rx_data)) {
-        std::memcpy(&rx_data, rx_buffer.data(), sizeof(rx_data));
-        // 左右車輪の位置・速度を格納
-        if (hw_positions_.size() >= 2) {
-          hw_positions_[0] = rx_data.left_position;
-          hw_velocities_[0] = rx_data.left_velocity;
-          hw_positions_[1] = rx_data.right_position;
-          hw_velocities_[1] = rx_data.right_velocity;
-        }
+  try {
+    if (receive_packet(&rx_data_)) {
+      if (hw_positions_.size() >= 2) {
+        hw_positions_[0] = rx_data_.left_position;
+        hw_velocities_[0] = rx_data_.left_velocity;
+        hw_positions_[1] = rx_data_.right_position;
+        hw_velocities_[1] = rx_data_.right_velocity;
       }
-    } catch (...) {
-      return hardware_interface::return_type::ERROR;
+      if (battery_pub_) {
+        std_msgs::msg::Float32 battery_msg;
+        battery_msg.data = rx_data_.battery_voltage;
+        battery_pub_->publish(battery_msg);
+      }
     }
+  } catch (...) {
+    return hardware_interface::return_type::ERROR;
   }
   return hardware_interface::return_type::OK;
 }
@@ -210,12 +209,17 @@ hardware_interface::return_type DiffBotSystemHardware::read(
 hardware_interface::return_type DiffBotSystemHardware::write(
   const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
 {
-  SendPacket tx_data;
+  CommandPacket tx_data{};
+  tx_data.header1 = HEADER1;
+  tx_data.header2 = HEADER2;
   // コマンド値を構造体に格納
   if (hw_commands_.size() >= 2) {
-    tx_data.left_velocity_cmd = hw_commands_[0];
-    tx_data.right_velocity_cmd = hw_commands_[1];
+    tx_data.left_velocity_cmd = static_cast<float>(hw_commands_[0]);
+    tx_data.right_velocity_cmd = static_cast<float>(hw_commands_[1]);
   }
+
+  tx_data.checksum = calculate_checksum(
+    reinterpret_cast<const uint8_t *>(&tx_data), sizeof(CommandPacket) - 1);
 
   // シリアル通信で送信
   const uint8_t* ptr = reinterpret_cast<const uint8_t*>(&tx_data);
@@ -228,6 +232,56 @@ hardware_interface::return_type DiffBotSystemHardware::write(
     return hardware_interface::return_type::ERROR;
   }
   return hardware_interface::return_type::OK;
+}
+
+bool DiffBotSystemHardware::receive_packet(StatusPacket * packet)
+{
+  while (serial_port_.IsDataAvailable()) {
+    uint8_t byte = 0;
+    serial_port_.ReadByte(byte);
+
+    switch (receive_state_) {
+      case ReceiveState::WAIT_FOR_HEADER1:
+        if (byte == HEADER1) {
+          receive_state_ = ReceiveState::WAIT_FOR_HEADER2;
+        }
+        break;
+      case ReceiveState::WAIT_FOR_HEADER2:
+        if (byte == HEADER2) {
+          receive_state_ = ReceiveState::RECEIVE_DATA;
+          rx_index_ = 0;
+          rx_buffer_[rx_index_++] = HEADER1;
+          rx_buffer_[rx_index_++] = HEADER2;
+        } else {
+          receive_state_ = byte == HEADER1 ?
+            ReceiveState::WAIT_FOR_HEADER2 : ReceiveState::WAIT_FOR_HEADER1;
+        }
+        break;
+      case ReceiveState::RECEIVE_DATA:
+        rx_buffer_[rx_index_++] = byte;
+        if (rx_index_ == sizeof(StatusPacket)) {
+          receive_state_ = ReceiveState::WAIT_FOR_HEADER1;
+          const uint8_t expected = calculate_checksum(
+            rx_buffer_.data(), sizeof(StatusPacket) - 1);
+          if (byte == expected) {
+            std::memcpy(packet, rx_buffer_.data(), sizeof(StatusPacket));
+            return true;
+          }
+          rx_index_ = 0;
+        }
+        break;
+    }
+  }
+  return false;
+}
+
+uint8_t DiffBotSystemHardware::calculate_checksum(const uint8_t * data, size_t len)
+{
+  uint8_t checksum = 0;
+  for (size_t i = 0; i < len; ++i) {
+    checksum ^= data[i];
+  }
+  return checksum;
 }
 
 
