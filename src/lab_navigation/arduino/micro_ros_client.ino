@@ -7,9 +7,9 @@
 #define RIGHT_A 27
 #define RIGHT_B 26
 #define LEFT_PWM 16
-#define LEFT_DIR 18
+#define LEFT_DIR 5
 #define RIGHT_PWM 17
-#define RIGHT_DIR 5
+#define RIGHT_DIR 18
 #define MAX_PWM 50
 #define MIN_PWM 5
 #define PWM_FREQ 20000
