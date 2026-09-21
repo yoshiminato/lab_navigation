@@ -45,7 +45,7 @@ def generate_launch_description():
     declared_arguments.extend([
         DeclareLaunchArgument("start_micro_ros_agent", default_value="true"),
         DeclareLaunchArgument("serial_port", default_value="/dev/ttyUSB0"),
-        DeclareLaunchArgument("serial_baudrate", default_value="115200"),
+        DeclareLaunchArgument("serial_baudrate", default_value="921600"),
     ])
 
     # Initialize Arguments

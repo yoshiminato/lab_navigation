@@ -26,7 +26,7 @@ ros2 launch ros2_control_diff_drive diffbot.launch.py gui:=false serial_port:=/d
 Agentはlaunchが自動起動する。実際に追加したコマンド相当は:
 
 ```bash
-ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyUSB0 -b 115200
+ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyUSB0 -b 921600
 ```
 
 既にAgentを別ターミナルで起動している場合は、二重起動しないよう次を指定する:
@@ -51,7 +51,11 @@ ros2 launch ros2_control_diff_drive diffbot.launch.py gui:=false use_mock_hardwa
 Agentの存在確認は`ros2 pkg prefix micro_ros_agent`。
 別PCではHumble向けAgentを導入し、そのワークスペースをsourceする。
 `/dev/serial/by-id/...`も`serial_port`に指定できる。
-`serial_baudrate`はマイコン側のtransportと一致させる（標準115200）。
+`serial_baudrate`はマイコン側の`MICRO_ROS_SERIAL_BAUD`と一致させる（標準921600）。
+IMU統合前の115200 baud版ファームウェアとは速度が異なるため、PCだけを更新せず
+マイコンも書き換える。ライブラリの既定transportは115200固定なので、スケッチ内で
+921600 baudのopen/read/write/close callbackを登録している。
+`navigation.launch.py`からも`serial_baudrate:=921600`を指定できる。
 
 ## マイコン
 
@@ -100,6 +104,7 @@ arduino-cli upload --fqbn esp32:esp32:esp32 --port /dev/ttyUSB0 \
 |---|---|---|---|
 | `/mcu/wheel_commands` | `std_msgs/Float64MultiArray` | `data=[左,右]` rad/s、layoutは空 | best effort / volatile / depth 1、20 Hz |
 | `/mcu/wheel_states` | `sensor_msgs/JointState` | name、position rad、velocity rad/s、左右2輪 | best effort / volatile / depth 1、20 Hz |
+| `/mpu6050/imu` | `sensor_msgs/Imu` | 加速度 m/s²・角速度 rad/s、frame_id=`imu_link` | best effort / volatile / depth 1、目標50 Hz |
 | `/battery_level` | `std_msgs/Float32` | 電圧 V（パーセントではない） | reliable / volatile、1 Hz |
 
 輪名は`left_wheel_joint`、`right_wheel_joint`。PCは受信配列の並びに依存せず名前で対応付ける。
@@ -138,6 +143,8 @@ hardwareパラメータで指定する。輪名やトピックを変える場合
 colcon test --packages-select ros2_control_diff_drive
 colcon test-result --verbose
 ros2 topic echo /mcu/wheel_states --qos-reliability best_effort
+ros2 topic echo /mpu6050/imu --qos-reliability best_effort
+ros2 topic hz /mpu6050/imu
 ros2 topic echo /battery_level
 ros2 topic echo /odom
 ```
@@ -147,8 +154,38 @@ ros2 topic echo /odom
 USB/XRCE通信、実モータ、電圧計測、物理的な通信断の試験は実機での確認が必要。
 初回は車輪を浮かせて方向・左右対応と停止動作を確認する。
 
-## IMU統合の状態
+## MPU-6050 IMU
 
-依頼文にIMUのコード本文が含まれていなかったため、IMUはまだ統合していない。
-使用ライブラリ、接続ピン、センサーの型番、発行データを確認したうえで同じ
-micro-ROS nodeにpublisherと読み取り周期を追加する。架空のIMU値は発行しない。
+提供されたコードを同じ`diffbot_mcu`ノードに統合した。
+
+- I2C: SDA=GPIO21、SCL=GPIO22、アドレス`0x68`。
+- 起動時にWHO_AM_Iを確認し、スリープを解除する。
+- 加速度レンジ±2 g、ジャイロレンジ±250 deg/sを明示設定する。
+- 加速度バイアス[g]: `[-0.0616, -0.0814, 0.1918]`。
+- ジャイロバイアス[deg/s]: `[-1.30, -1.90, -0.75]`。
+- 14バイトを一括取得し、温度2バイトを飛ばしてジャイロを読む。
+- 加速度は16384 LSB/gからバイアスを引いて9.80665倍、角速度は131 LSB/(deg/s)
+  からバイアスを引いてπ/180倍する。軸の向きと重力成分は提供コードどおり。
+- 姿勢推定をしていないため`orientation_covariance[0] = -1`とする。
+  加速度・角速度の共分散は不明を示すゼロ行列とし、架空の分散を設定しない。
+- Agentとの時刻同期後、読み取り完了時のエポック時刻をstampに入れる。
+  初回同期失敗時は5秒ごとに再試行し、同期成功までIMUをpublishしない。
+- I2Cタイムアウトは5 ms。読み取り不足やNACK時はそのサンプルを破棄し、1秒ごとに
+  再初期化を試す。IMU未接続でも車輪通信を継続する。
+- Agent再接続時はIMU publisherも再作成する。PIDは別タスクで継続する。
+
+IMUメッセージは約320バイトあり、50 Hzで約16 kB/sとなる。115200 baud・8N1の
+理論最大11.52 kB/sをIMU単独で超えるので、車輪通信も含め921600 baudへ変更した。
+50 Hzは目標周期であり、Agent確認・時刻同期・USBやI2C遅延による揺らぎは実機で測定する。
+受信側はSensorDataQoSなどbest effortに対応したQoSを使う。
+
+`imu_link`はセンサー座標系。取り付け位置・姿勢が未指定のため、`base_link -> imu_link`
+のTFは追加していない。IMUを自己位置推定で使う際には実際の取り付けに合わせて設定する。
+現在の`localization.yaml`の`use_imu: false`は維持しており、今回の変更でIMUをodomに
+融合する処理は追加していない。
+
+IMUの値・周期、USBの921600 baud通信、センサー切断・再接続は実機未検証。
+
+参考:
+- [sensor_msgs/Imu仕様](https://docs.ros.org/en/humble/p/sensor_msgs/msg/Imu.html)
+- [MPU-6050レジスタ資料](https://invensense.tdk.com/wp-content/uploads/2015/02/MPU-6000-Register-Map.pdf)

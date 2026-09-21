@@ -1,6 +1,7 @@
 // ESP32 / Arduino-ESP32 2.x / micro_ros_arduino (Humble).
 // USB Serial is exclusively owned by micro-ROS; do not print debug text to it.
 #include <Arduino.h>
+#include <Wire.h>
 #include <math.h>
 #include <micro_ros_arduino.h>
 #include <rcl/rcl.h>
@@ -8,6 +9,7 @@
 #include <rclc/executor.h>
 #include <rmw_microros/rmw_microros.h>
 #include <sensor_msgs/msg/joint_state.h>
+#include <sensor_msgs/msg/imu.h>
 #include <std_msgs/msg/float64_multi_array.h>
 #include <std_msgs/msg/float32.h>
 
@@ -29,6 +31,18 @@
 #define COUNTS_PER_REV (1060.0 * 4.0)
 #define CONTROL_PERIOD_MS 50
 #define COMMAND_TIMEOUT_MS 500
+// IMU (about 320 bytes x 50 Hz) alone exceeds 115200 baud, before wheel traffic.
+#define MICRO_ROS_SERIAL_BAUD 921600
+#define IMU_PERIOD_MS 20
+#define MPU_ADDRESS 0x68
+#define IMU_SDA 21
+#define IMU_SCL 22
+
+// Calibration from the supplied MPU-6050 sketch: acceleration in g, gyro in deg/s.
+const double accel_bias[3] = {-0.0616, -0.0814, 0.1918};
+const double gyro_bias[3] = {-1.30, -1.90, -0.75};
+bool imu_ready = false;
+uint32_t imu_initialized_ms = 0;
 // Match the PC's ROS_DOMAIN_ID. The Agent does not translate domains.
 #ifndef MICRO_ROS_DOMAIN_ID
 #define MICRO_ROS_DOMAIN_ID 0
@@ -49,6 +63,65 @@ double wheel_velocity[2] = {0.0, 0.0};
 uint32_t last_command_ms = 0;
 bool command_valid = false;
 bool connected = false;
+
+// Use explicit callbacks: the library's default open callback forces 115200 baud.
+bool serialTransportOpen(struct uxrCustomTransport *)
+{
+  Serial.setRxBufferSize(1024);
+  Serial.begin(MICRO_ROS_SERIAL_BAUD);
+  return true;
+}
+
+bool serialTransportClose(struct uxrCustomTransport *)
+{
+  Serial.end();
+  return true;
+}
+
+size_t serialTransportWrite(
+  struct uxrCustomTransport *, const uint8_t * data, size_t length, uint8_t * error)
+{
+  const size_t written = Serial.write(data, length);
+  *error = written == length ? 0 : 1;
+  return written;
+}
+
+size_t serialTransportRead(
+  struct uxrCustomTransport *, uint8_t * data, size_t length, int timeout, uint8_t * error)
+{
+  Serial.setTimeout(timeout > 0 ? timeout : 0);
+  *error = 0;
+  return Serial.readBytes(reinterpret_cast<char *>(data), length);
+}
+
+bool writeImuRegister(uint8_t reg, uint8_t value)
+{
+  Wire.beginTransmission(MPU_ADDRESS);
+  Wire.write(reg);
+  Wire.write(value);
+  return Wire.endTransmission(true) == 0;
+}
+
+bool initializeImu()
+{
+  // Check WHO_AM_I before configuring the ranges used by the conversion below.
+  Wire.beginTransmission(MPU_ADDRESS);
+  Wire.write(0x75);
+  if (Wire.endTransmission(false) != 0 ||
+    Wire.requestFrom(uint8_t(MPU_ADDRESS), size_t(1), true) != 1 ||
+    Wire.read() != 0x68)
+  {
+    return false;
+  }
+  if (!writeImuRegister(0x6B, 0x00) ||  // wake up, internal clock (as supplied)
+    !writeImuRegister(0x1B, 0x00) ||    // gyro +/-250 deg/s: 131 LSB/(deg/s)
+    !writeImuRegister(0x1C, 0x00))      // accel +/-2 g: 16384 LSB/g
+  {
+    return false;
+  }
+  imu_initialized_ms = millis();
+  return true;
+}
 
 void IRAM_ATTR leftEncoder()
 {
@@ -153,10 +226,11 @@ rcl_allocator_t allocator;
 rclc_support_t support{};
 rcl_node_t node{};
 rcl_subscription_t command_sub{};
-rcl_publisher_t state_pub{}, battery_pub{};
+rcl_publisher_t state_pub{}, battery_pub{}, imu_pub{};
 rclc_executor_t executor{};
 bool support_ready = false, node_ready = false, sub_ready = false;
-bool state_pub_ready = false, battery_pub_ready = false, executor_ready = false;
+bool state_pub_ready = false, battery_pub_ready = false, imu_pub_ready = false;
+bool executor_ready = false;
 
 // Preallocated storage: no message allocation inside the running control loop.
 std_msgs__msg__Float64MultiArray command_msg{};
@@ -168,6 +242,38 @@ char right_name[] = "right_wheel_joint";
 char empty_frame[] = "";
 double state_positions[2], state_velocities[2];
 std_msgs__msg__Float32 battery_msg{};
+sensor_msgs__msg__Imu imu_msg{};
+char imu_frame[] = "imu_link";
+
+int16_t imuWord(const uint8_t * data)
+{
+  return static_cast<int16_t>((static_cast<uint16_t>(data[0]) << 8) | data[1]);
+}
+
+bool readImu()
+{
+  Wire.beginTransmission(MPU_ADDRESS);
+  Wire.write(0x3B);
+  if (Wire.endTransmission(false) != 0 ||
+    Wire.requestFrom(uint8_t(MPU_ADDRESS), size_t(14), true) != 14 ||
+    Wire.available() < 14)
+  {
+    return false;  // Never publish stale values or interpret Wire.read() == -1 as data.
+  }
+  uint8_t raw[14];
+  for (size_t i = 0; i < sizeof(raw); ++i) {raw[i] = Wire.read();}
+  const int64_t ns = rmw_uros_epoch_nanos();
+  imu_msg.header.stamp.sec = ns / 1000000000LL;
+  imu_msg.header.stamp.nanosec = ns % 1000000000LL;
+  imu_msg.linear_acceleration.x = (imuWord(raw) / 16384.0 - accel_bias[0]) * 9.80665;
+  imu_msg.linear_acceleration.y = (imuWord(raw + 2) / 16384.0 - accel_bias[1]) * 9.80665;
+  imu_msg.linear_acceleration.z = (imuWord(raw + 4) / 16384.0 - accel_bias[2]) * 9.80665;
+  // Bytes 6-7 hold temperature; gyro starts at byte 8.
+  imu_msg.angular_velocity.x = (imuWord(raw + 8) / 131.0 - gyro_bias[0]) * (PI / 180.0);
+  imu_msg.angular_velocity.y = (imuWord(raw + 10) / 131.0 - gyro_bias[1]) * (PI / 180.0);
+  imu_msg.angular_velocity.z = (imuWord(raw + 12) / 131.0 - gyro_bias[2]) * (PI / 180.0);
+  return true;
+}
 
 void commandCallback(const void * input)
 {
@@ -206,6 +312,13 @@ void initMessages()
   state_msg.header.frame_id.data = empty_frame;
   state_msg.header.frame_id.size = 0;
   state_msg.header.frame_id.capacity = 1;
+  imu_msg.header.frame_id.data = imu_frame;
+  imu_msg.header.frame_id.size = sizeof(imu_frame) - 1;
+  imu_msg.header.frame_id.capacity = sizeof(imu_frame);
+  // MPU-6050 raw acceleration/gyro do not provide an orientation estimate.
+  imu_msg.orientation.w = 1.0;
+  imu_msg.orientation_covariance[0] = -1.0;
+  // Acceleration/gyro covariance stays zero: unknown, not calibrated variance.
 }
 
 bool createEntities()
@@ -216,6 +329,7 @@ bool createEntities()
   command_sub = rcl_get_zero_initialized_subscription();
   state_pub = rcl_get_zero_initialized_publisher();
   battery_pub = rcl_get_zero_initialized_publisher();
+  imu_pub = rcl_get_zero_initialized_publisher();
   executor = rclc_executor_get_zero_initialized_executor();
   rcl_init_options_t options = rcl_get_zero_initialized_init_options();
   if (rcl_init_options_init(&options, allocator) != RCL_RET_OK) {return false;}
@@ -238,6 +352,10 @@ bool createEntities()
     ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, JointState),
     "/mcu/wheel_states", &qos) != RCL_RET_OK) {return false;}
   state_pub_ready = true;
+  if (rclc_publisher_init(&imu_pub, &node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
+    "/mpu6050/imu", &qos) != RCL_RET_OK) {return false;}
+  imu_pub_ready = true;
   // Retain the existing reliable /battery_level subscription contract.
   if (rclc_publisher_init_default(&battery_pub, &node,
     ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32),
@@ -268,6 +386,7 @@ void destroyEntities()
   if (sub_ready) {(void) rcl_subscription_fini(&command_sub, &node); sub_ready = false;}
   if (state_pub_ready) {(void) rcl_publisher_fini(&state_pub, &node); state_pub_ready = false;}
   if (battery_pub_ready) {(void) rcl_publisher_fini(&battery_pub, &node); battery_pub_ready = false;}
+  if (imu_pub_ready) {(void) rcl_publisher_fini(&imu_pub, &node); imu_pub_ready = false;}
   if (node_ready) {(void) rcl_node_fini(&node); node_ready = false;}
   if (support_ready) {(void) rclc_support_fini(&support); support_ready = false;}
 }
@@ -292,7 +411,11 @@ void setup()
   ledcAttachPin(RIGHT_PWM, RIGHT_PWM_CH);
   setMotor(0, 0);
   initMessages();
-  set_microros_transports();  // default Arduino Serial transport: 115200 baud
+  Wire.begin(IMU_SDA, IMU_SCL);
+  Wire.setTimeOut(5);  // Bound I2C faults; motor control runs in its own task.
+  imu_ready = initializeImu();
+  rmw_uros_set_custom_transport(true, nullptr,
+    serialTransportOpen, serialTransportClose, serialTransportWrite, serialTransportRead);
   if (xTaskCreate(controlTask, "motor_control", 4096, nullptr, 2, nullptr) != pdPASS) {
     for (;;) {setMotor(0, 0); delay(1000);}
   }
@@ -302,7 +425,12 @@ void loop()
 {
   static bool entities_ready = false;
   static uint32_t last_ping = 0, last_state = 0, last_battery = 0;
+  static uint32_t last_imu = 0, last_imu_retry = 0, last_sync_retry = 0;
   const uint32_t now = millis();
+  if (!imu_ready && static_cast<uint32_t>(now - last_imu_retry) >= 1000) {
+    last_imu_retry = now;
+    imu_ready = initializeImu();
+  }
   if (!entities_ready) {
     if (static_cast<uint32_t>(now - last_ping) >= 500) {
       last_ping = now;
@@ -357,6 +485,27 @@ void loop()
     last_battery = now;
     battery_msg.data = analogReadMilliVolts(BATTERY) / 1000.0f * VOLTAGE_DIVIDER_RATIO;
     (void) rcl_publish(&battery_pub, &battery_msg, nullptr);
+  }
+  // Recover a failed initial time sync without publishing IMU data with invalid timestamps.
+  if (!rmw_uros_epoch_synchronized() &&
+    static_cast<uint32_t>(now - last_sync_retry) >= 5000)
+  {
+    last_sync_retry = now;
+    (void) rmw_uros_sync_session(100);
+  }
+  const uint32_t imu_now = millis();
+  if (imu_ready && rmw_uros_epoch_synchronized() &&
+    static_cast<uint32_t>(imu_now - imu_initialized_ms) >= 100 &&
+    static_cast<uint32_t>(imu_now - last_imu) >= IMU_PERIOD_MS)
+  {
+    last_imu = imu_now;
+    if (!readImu()) {
+      imu_ready = false;
+      last_imu_retry = millis();
+    } else if (rcl_publish(&imu_pub, &imu_msg, nullptr) != RCL_RET_OK) {
+      destroyEntities();
+      entities_ready = false;
+    }
   }
   delay(1);
 }

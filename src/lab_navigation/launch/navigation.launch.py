@@ -36,6 +36,7 @@ def generate_launch_description():
 
     # diffbot.launch.py starts the micro-ROS Agent and ros2_control together.
     serial_port_arg = DeclareLaunchArgument('serial_port', default_value='/dev/ttyUSB0')
+    serial_baudrate_arg = DeclareLaunchArgument('serial_baudrate', default_value='921600')
     start_agent_arg = DeclareLaunchArgument('start_micro_ros_agent', default_value='true')
     ros2_control = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -45,6 +46,7 @@ def generate_launch_description():
         ),
         launch_arguments={
             'serial_port': LaunchConfiguration('serial_port'),
+            'serial_baudrate': LaunchConfiguration('serial_baudrate'),
             'start_micro_ros_agent': LaunchConfiguration('start_micro_ros_agent'),
         }.items(),
     )
@@ -139,6 +141,7 @@ def generate_launch_description():
         declare_nav2_params_file_path_cmd,
         declare_localization_params_file_path_cmd,
         serial_port_arg,
+        serial_baudrate_arg,
         start_agent_arg,
         ros2_control,
         velodyne,
