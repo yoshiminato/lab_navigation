@@ -15,11 +15,13 @@ set(THIS_PACKAGE_INCLUDE_DEPENDS
   rclcpp
   rclcpp_lifecycle
   std_msgs
+  sensor_msgs
 )
 
 # find dependencies
 find_package(backward_ros REQUIRED)
 find_package(ament_cmake REQUIRED)
+find_package(Threads REQUIRED)
 
 foreach(Dependency IN ITEMS ${THIS_PACKAGE_INCLUDE_DEPENDS})
   find_package(${Dependency} REQUIRED)
@@ -36,7 +38,7 @@ target_include_directories(ros2_control_diff_drive PUBLIC
 $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/hardware/include>
 $<INSTALL_INTERFACE:include/ros2_control_diff_drive>
 )
-target_link_libraries(ros2_control_diff_drive PUBLIC serial)
+target_link_libraries(ros2_control_diff_drive PUBLIC Threads::Threads)
 ament_target_dependencies(
   ros2_control_diff_drive PUBLIC
   ${THIS_PACKAGE_INCLUDE_DEPENDS}
@@ -58,6 +60,9 @@ install(
   DIRECTORY bringup/launch bringup/config
   DESTINATION share/ros2_control_diff_drive
 )
+install(FILES doc/microros_migration.md
+  DESTINATION share/${PROJECT_NAME}/doc
+)
 install(TARGETS ros2_control_diff_drive
   EXPORT export_ros2_control_diff_drive
   ARCHIVE DESTINATION lib
@@ -78,6 +83,7 @@ if(BUILD_TESTING)
   endfunction()
   add_ros_isolated_launch_test(test/test_view_robot_launch.py)
   add_ros_isolated_launch_test(test/test_diffbot_launch.py)
+  add_ros_isolated_launch_test(test/test_microros_transport_launch.py)
 endif()
 
 ## EXPORTS

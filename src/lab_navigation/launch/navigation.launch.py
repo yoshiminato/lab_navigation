@@ -1,7 +1,8 @@
 from launch import LaunchDescription
 from launch.actions import ExecuteProcess
 from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch_ros.substitutions import FindPackageShare
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 
@@ -33,24 +34,19 @@ def generate_launch_description():
         default_value='/home/user/lab_navigation_ws/src/lab_navigation/params/localization.yaml'
     )
 
-    # # micro-ROSエージェントを起動するためのコマンドを定義
-    # micro_ros = ExecuteProcess(
-    #     cmd=[
-    #         'gnome-terminal', '--tab', '--title=micro_ros', '--',
-    #         'bash', '-c',
-    #         'ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyUSB0 -v6; exec bash'
-    #     ],
-    #     output='screen'
-    # )
-
-    # robot_state_publisherとjoint_state_publisherを起動するためのコマンドを定義
-    ros2_control = ExecuteProcess(
-        cmd=[
-            'gnome-terminal', '--tab', '--title=ros2_control_ws', '--',
-            'bash', '-c',
-            'ros2 launch ros2_control_diff_drive diffbot.launch.py; exec bash'
-        ],
-        output='screen'
+    # diffbot.launch.py starts the micro-ROS Agent and ros2_control together.
+    serial_port_arg = DeclareLaunchArgument('serial_port', default_value='/dev/ttyUSB0')
+    start_agent_arg = DeclareLaunchArgument('start_micro_ros_agent', default_value='true')
+    ros2_control = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            PathJoinSubstitution([
+                FindPackageShare('ros2_control_diff_drive'), 'launch', 'diffbot.launch.py'
+            ])
+        ),
+        launch_arguments={
+            'serial_port': LaunchConfiguration('serial_port'),
+            'start_micro_ros_agent': LaunchConfiguration('start_micro_ros_agent'),
+        }.items(),
     )
 
     # Velodyneドライバを起動するためのコマンドを定義
@@ -142,7 +138,8 @@ def generate_launch_description():
         declare_map_yaml_file_path_cmd,
         declare_nav2_params_file_path_cmd,
         declare_localization_params_file_path_cmd,
-        # micro_ros,
+        serial_port_arg,
+        start_agent_arg,
         ros2_control,
         velodyne,
         lidar_localization,

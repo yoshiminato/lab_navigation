@@ -7,8 +7,11 @@
       <xacro:unless value="${use_mock_hardware}">
         <hardware>
           <plugin>ros2_control_diff_drive/DiffBotSystemHardware</plugin>
-          <param name="example_param_hw_start_duration_sec">0</param>
-          <param name="example_param_hw_stop_duration_sec">3.0</param>
+          <param name="command_topic">/mcu/wheel_commands</param>
+          <param name="state_topic">/mcu/wheel_states</param>
+          <param name="state_timeout_sec">0.5</param>
+          <param name="command_timeout_sec">0.5</param>
+          <param name="startup_timeout_sec">20.0</param>
         </hardware>
       </xacro:unless>
       <xacro:if value="${use_mock_hardware}">

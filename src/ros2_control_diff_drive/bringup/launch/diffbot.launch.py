@@ -16,7 +16,9 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, RegisterEventHandler
 from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit
-from launch.substitutions import Command, FindExecutable, PathJoinSubstitution, LaunchConfiguration
+from launch.substitutions import (
+    Command, FindExecutable, PathJoinSubstitution, LaunchConfiguration, PythonExpression,
+)
 
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -40,9 +42,32 @@ def generate_launch_description():
         )
     )
 
+    declared_arguments.extend([
+        DeclareLaunchArgument("start_micro_ros_agent", default_value="true"),
+        DeclareLaunchArgument("serial_port", default_value="/dev/ttyUSB0"),
+        DeclareLaunchArgument("serial_baudrate", default_value="115200"),
+    ])
+
     # Initialize Arguments
     gui = LaunchConfiguration("gui")
     use_mock_hardware = LaunchConfiguration("use_mock_hardware")
+
+    # Only the Agent opens the serial port. Mock hardware needs no Agent.
+    micro_ros_agent = Node(
+        package="micro_ros_agent",
+        executable="micro_ros_agent",
+        arguments=[
+            "serial", "--dev", LaunchConfiguration("serial_port"),
+            "-b", LaunchConfiguration("serial_baudrate"),
+        ],
+        output="screen",
+        respawn=True,
+        respawn_delay=2.0,
+        condition=IfCondition(PythonExpression([
+            "'", LaunchConfiguration("start_micro_ros_agent"), "'.lower() == 'true' and '",
+            use_mock_hardware, "'.lower() != 'true'",
+        ])),
+    )
 
     # Get URDF via xacro
     robot_description_content = Command(
@@ -99,13 +124,15 @@ def generate_launch_description():
     joint_state_broadcaster_spawner = Node(
         package="controller_manager",
         executable="spawner",
-        arguments=["joint_state_broadcaster", "--controller-manager", "/controller_manager"],
+        arguments=["joint_state_broadcaster", "--controller-manager", "/controller_manager",
+                   "--controller-manager-timeout", "60", "--service-call-timeout", "30"],
     )
 
     robot_controller_spawner = Node(
         package="controller_manager",
         executable="spawner",
-        arguments=["diffbot_base_controller", "--controller-manager", "/controller_manager"],
+        arguments=["diffbot_base_controller", "--controller-manager", "/controller_manager",
+                   "--controller-manager-timeout", "60", "--service-call-timeout", "30"],
     )
 
     # Delay rviz start after `joint_state_broadcaster`
@@ -125,6 +152,7 @@ def generate_launch_description():
     )
 
     nodes = [
+        micro_ros_agent,
         control_node,
         robot_state_pub_node,
         joint_state_broadcaster_spawner,
