@@ -13,7 +13,7 @@
 #define RIGHT_PWM 17
 #define RIGHT_DIR 18
 
-#define MAX_PWM 50
+#define MAX_PWM 70
 #define MIN_PWM 5
 
 #define PWM_FREQ 20000

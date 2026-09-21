@@ -12,25 +12,25 @@ def generate_launch_description():
     # PCDファイルのパスを指定するためのコマンドを定義
     declare_pcd_file_path_cmd = DeclareLaunchArgument(
         'pcd_file_path',
-        default_value='/home/user/pcd/hv_building_lab/hv_building_lab.pcd'
+        default_value='/home/user/pcd/hv_building_lab/hv_building_lab2.pcd'
     )
 
     # 地図のyamlファイルのパスを指定するためのコマンドを定義
     declare_map_yaml_file_path_cmd = DeclareLaunchArgument(
         'map_yaml_file_path',
-        default_value='/home/user/map/hv_building_lab/hv_building_lab.yaml'
+        default_value='/home/user/map/hv_building_lab/hv_building_lab2.yaml'
     )
 
     # Nav2パラメータファイルのパスを指定するためのコマンドを定義
     declare_nav2_params_file_path_cmd = DeclareLaunchArgument(
         'nav2_params_file_path',
-        default_value='/home/user/lab_navigation/src/lab_navigation/params/nav2_params.yaml'
+        default_value='/home/user/lab_navigation_ws/src/lab_navigation/params/nav2_params.yaml'
     )
 
     # localizationパラメータファイルのパスを指定するためのコマンドを定義
     declare_localization_params_file_path_cmd = DeclareLaunchArgument(
         'localization_params_file_path',
-        default_value='/home/user/lab_navigation/src/lab_navigation/params/localization.yaml'
+        default_value='/home/user/lab_navigation_ws/src/lab_navigation/params/localization.yaml'
     )
 
     # # micro-ROSエージェントを起動するためのコマンドを定義

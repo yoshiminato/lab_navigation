@@ -18,7 +18,7 @@ def generate_launch_description():
         executable='teleop_node',
         name='teleop_twist_joy',
         output='screen',
-        parameters=['/home/user/lab_navigation/src/lab_navigation/config/ps3.config.yaml']
+        parameters=['/home/user/lab_navigation_ws/src/lab_navigation/config/ps3.config.yaml']
 
     )
 
