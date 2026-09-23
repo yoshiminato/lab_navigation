@@ -1,0 +1,3 @@
+[submodule "src/external/lidar_localization_ros2"]
+	path = src/external/lidar_localization_ros2
+	url = git@github.com:rsasaki0109/lidar_localization_ros2.git
