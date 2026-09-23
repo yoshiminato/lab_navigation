@@ -196,15 +196,19 @@ def generate_launch_description():
         }.items(),
     )
 
-    # Keep separate terminal tabs for convenient verification of node logs.
-    # They inherit the ROS environment of the parent `ros2 launch` process.
+    # カスタムvelodynelancherの起動
+    # velodyne_laserscan_nodeの起動を除外したもの
     velodyne = ExecuteProcess(
         cmd=[
-            'gnome-terminal', '--tab', '--title=velodyne', '--',
-            'bash', '-c',
-            'ros2 launch velodyne velodyne-all-nodes-VLP16-launch.py; exec bash',
+            'gnome-terminal',
+            '--tab',
+            '--title=velodyne',
+            '--',
+            'bash',
+            '-c',
+            'ros2 launch lab_navigation velodyne_points.launch.py; exec bash'
         ],
-        output='screen',
+        output='screen'
     )
 
     # Source only the integrated workspace; do not source the old localization_ws.
