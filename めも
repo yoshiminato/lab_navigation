@@ -4,6 +4,7 @@ ros2 run tf2_ros tf2_echo odom base_link
 
 
 
+
 ## scanの確認
 ros2 topic info /scan -v
 ros2 topic hz /scan
@@ -15,3 +16,64 @@ ros2 topic echo /cloud_in --once
 
 ros2 topic echo /velodyne_points --once
 ros2 run tf2_ros tf2_echo base_link velodyne
+
+
+
+ros2 topic echo /tf
+date +%s.%N
+ros2 run tf2_tools view_frames
+
+より重要なのは、あなたが使っている lidar_localization_ros2 がどのトピックを出しているかです。
+
+ros2 node list
+
+でlocalizationノード名を確認した後、
+
+ros2 node info <localizationノード名>
+
+を実行してください。
+
+
+ros2 run tf2_ros tf2_echo map base_link
+
+
+
+
+------
+
+
+ros2 run tf2_ros tf2_monitor map odom
+ros2 topic hz /tf
+ros2 topic hz /velodyne_points
+
+Color Transformer: FlatColor
+
+
+## 処理落ち？
+
+エラー発生状況下で
+
+htop
+
+ros2 topic echo /velodyne_points --once
+
+
+
+
+ros2 run tf2_ros tf2_echo map odom
+ros2 run tf2_ros tf2_echo odom base_link
+
+
+
+------
+
+
+
+mkdir -p ~/nav_debug/system_info
+ros2 node list > ~/nav_debug/system_info/nodes.txt
+ros2 topic list -t > ~/nav_debug/system_info/topics.txt
+ros2 service list > ~/nav_debug/system_info/services.txt
+
+ros2 run tf2_tools view_frames
+
+ros2 run tf2_ros tf2_monitor > ~/nav_debug/system_info/tf_monitor.txt
