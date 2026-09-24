@@ -1,3 +1,6 @@
 build
 install
 log
+src/lab_navigation/map
+src/lab_navigation/pcd
+src/lab_navigation/bag
