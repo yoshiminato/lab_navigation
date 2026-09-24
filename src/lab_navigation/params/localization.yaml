@@ -5,10 +5,10 @@
       ndt_resolution: 1.0
       ndt_step_size: 0.1
       ndt_num_threads: 4
-      ndt_max_iterations: 30
+      ndt_max_iterations: 25
       transform_epsilon: 0.01
       voxel_leaf_size: 0.3
-      scan_max_range: 100.0
+      scan_max_range: 80.0
       scan_min_range: 1.0
       scan_period: 0.1
       use_pcd_map: true

@@ -1,0 +1,17 @@
+## どこのtfが遅いのか特定
+ros2 run tf2_ros tf2_echo map odom
+ros2 run tf2_ros tf2_echo odom base_link
+
+
+
+## scanの確認
+ros2 topic info /scan -v
+ros2 topic hz /scan
+ros2 topic echo /scan --once
+
+ros2 topic hz /velodyne_points
+ros2 topic hz /cloud_in
+ros2 topic echo /cloud_in --once
+
+ros2 topic echo /velodyne_points --once
+ros2 run tf2_ros tf2_echo base_link velodyne
