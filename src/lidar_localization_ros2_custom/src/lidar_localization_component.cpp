@@ -338,6 +338,7 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
   }
   initialpose_recieved_ = true;
   corrent_pose_with_cov_stamped_ptr_ = msg;
+  odom_time_initialized_ = false;
   pose_pub_->publish(*corrent_pose_with_cov_stamped_ptr_);
 
   if(last_scan_ptr_) {
@@ -373,13 +374,28 @@ void PCLLocalization::mapReceived(const sensor_msgs::msg::PointCloud2::SharedPtr
   RCLCPP_INFO(get_logger(), "mapReceived end");
 }
 
+
 void PCLLocalization::odomReceived(const nav_msgs::msg::Odometry::ConstSharedPtr msg)
 {
-  if (!use_odom_) {return;}
+  if (!use_odom_) {return;}  
+
+  // 起動直後、固定の初期姿勢が設定される前の受信に備える
+  if (!initialpose_recieved_ || !corrent_pose_with_cov_stamped_ptr_) {
+    return;
+  }
+
   RCLCPP_INFO(get_logger(), "odomReceived");
 
   double current_odom_received_time = msg->header.stamp.sec +
     msg->header.stamp.nanosec * 1e-9;
+
+  // 起動後、または自己位置の修正後の最初のodom
+  if (!odom_time_initialized_) {
+    last_odom_received_time_ = current_odom_received_time;
+    odom_time_initialized_ = true;
+    return;
+  }
+
   double dt_odom = current_odom_received_time - last_odom_received_time_;
   last_odom_received_time_ = current_odom_received_time;
   if (dt_odom > 1.0 /* [sec] */) {
@@ -419,6 +435,7 @@ void PCLLocalization::odomReceived(const nav_msgs::msg::Odometry::ConstSharedPtr
   corrent_pose_with_cov_stamped_ptr_->pose.pose.position.z += delta_position.z();
   corrent_pose_with_cov_stamped_ptr_->pose.pose.orientation = quat_msg;
 }
+
 
 void PCLLocalization::imuReceived(const sensor_msgs::msg::Imu::ConstSharedPtr msg)
 {

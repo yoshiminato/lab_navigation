@@ -119,7 +119,8 @@ public:
   double initial_pose_qw_;
 
   bool use_odom_{false};
-  double last_odom_received_time_;
+  double last_odom_received_time_{0.0};
+  bool odom_time_initialized_{false};
   bool use_imu_{false};
   bool enable_debug_{false};
   bool enable_map_odom_tf_{false};
