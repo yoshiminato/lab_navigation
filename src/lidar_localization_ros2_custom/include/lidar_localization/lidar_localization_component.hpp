@@ -1,6 +1,7 @@
 #include <chrono>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <utility>
@@ -136,4 +137,16 @@ public:
 
   rclcpp::TimerBase::SharedPtr pose_publish_timer_;
   void timerPublishPose();
+
+private:
+  bool cachePoseForPublishing(const geometry_msgs::msg::PoseWithCovarianceStamped & pose);
+  void stopTimerPublishing();
+
+  // The publishing callback never reads the pose being modified by NDT/odom.
+  rclcpp::CallbackGroup::SharedPtr publishing_callback_group_;
+  std::mutex publishing_mutex_;
+  bool publishing_active_{false};
+  bool cached_transform_valid_{false};
+  geometry_msgs::msg::PoseWithCovarianceStamped cached_pose_;
+  geometry_msgs::msg::TransformStamped cached_transform_;
 };

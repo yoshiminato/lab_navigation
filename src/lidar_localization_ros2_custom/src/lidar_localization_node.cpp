@@ -3,7 +3,9 @@
 int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
-  rclcpp::executors::SingleThreadedExecutor executor;
+  // NDT stays in the default mutually exclusive group. The publishing timer
+  // has its own group so it can run while registration is busy.
+  rclcpp::executors::MultiThreadedExecutor executor(rclcpp::ExecutorOptions(), 2);
   rclcpp::NodeOptions options;
   std::shared_ptr<PCLLocalization> pcl_l = std::make_shared<PCLLocalization>(options);
 

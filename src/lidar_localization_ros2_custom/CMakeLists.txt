@@ -86,4 +86,18 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}/
 )
 
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  find_package(tf2_msgs REQUIRED)
+  ament_add_gtest(test_timer_publishing test/test_timer_publishing.cpp
+    TIMEOUT 45
+    ENV ROS_DOMAIN_ID=219 ROS_LOCALHOST_ONLY=1)
+  if(TARGET test_timer_publishing)
+    target_link_libraries(test_timer_publishing lidar_localization_component
+      ${PCL_LIBRARIES} ${rclcpp_lifecycle_LIBRARIES})
+    ament_target_dependencies(test_timer_publishing rclcpp rclcpp_lifecycle
+      tf2_ros tf2_msgs tf2_geometry_msgs tf2_sensor_msgs tf2_eigen pcl_conversions ndt_omp_ros2)
+  endif()
+endif()
+
 ament_package()

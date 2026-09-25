@@ -1,5 +1,6 @@
 #include <lidar_localization/lidar_localization_component.hpp>
 #include <chrono>
+#include <cmath>
 
 PCLLocalization::PCLLocalization(const rclcpp::NodeOptions & options)
 : rclcpp_lifecycle::LifecycleNode("lidar_localization", options),
@@ -46,7 +47,18 @@ CallbackReturn PCLLocalization::on_configure(const rclcpp_lifecycle::State &)
 {
   RCLCPP_INFO(get_logger(), "Configuring");
 
+  stopTimerPublishing();
+  {
+    std::lock_guard<std::mutex> lock(publishing_mutex_);
+    cached_transform_valid_ = false;
+  }
   initializeParameters();
+  if (enable_timer_publishing_ &&
+    (!std::isfinite(pose_publish_frequency_) || pose_publish_frequency_ <= 0.0))
+  {
+    RCLCPP_ERROR(get_logger(), "pose_publish_frequency must be finite and positive");
+    return CallbackReturn::FAILURE;
+  }
   initializePubSub();
   initializeRegistration();
 
@@ -128,6 +140,13 @@ CallbackReturn PCLLocalization::on_activate(const rclcpp_lifecycle::State &)
     map_recieved_ = true;
   }
 
+  {
+    std::lock_guard<std::mutex> lock(publishing_mutex_);
+    publishing_active_ = true;
+    if (pose_publish_timer_) {
+      pose_publish_timer_->reset();
+    }
+  }
   RCLCPP_INFO(get_logger(), "Activating end");
   return CallbackReturn::SUCCESS;
 }
@@ -136,6 +155,7 @@ CallbackReturn PCLLocalization::on_deactivate(const rclcpp_lifecycle::State &)
 {
   RCLCPP_INFO(get_logger(), "Deactivating");
 
+  stopTimerPublishing();
   pose_pub_->on_deactivate();
   path_pub_->on_deactivate();
   initial_map_pub_->on_deactivate();
@@ -147,6 +167,7 @@ CallbackReturn PCLLocalization::on_deactivate(const rclcpp_lifecycle::State &)
 CallbackReturn PCLLocalization::on_cleanup(const rclcpp_lifecycle::State &)
 {
   RCLCPP_INFO(get_logger(), "Cleaning Up");
+  stopTimerPublishing();
   initial_pose_sub_.reset();
   initial_map_pub_.reset();
   path_pub_.reset();
@@ -166,6 +187,7 @@ CallbackReturn PCLLocalization::on_cleanup(const rclcpp_lifecycle::State &)
 CallbackReturn PCLLocalization::on_shutdown(const rclcpp_lifecycle::State & state)
 {
   RCLCPP_INFO(get_logger(), "Shutting Down from %s", state.label().c_str());
+  stopTimerPublishing();
 
   return CallbackReturn::SUCCESS;
 }
@@ -173,6 +195,7 @@ CallbackReturn PCLLocalization::on_shutdown(const rclcpp_lifecycle::State & stat
 CallbackReturn PCLLocalization::on_error(const rclcpp_lifecycle::State & state)
 {
   RCLCPP_FATAL(get_logger(), "Error Processing from %s", state.label().c_str());
+  stopTimerPublishing();
 
   return CallbackReturn::SUCCESS;
 }
@@ -272,10 +295,12 @@ void PCLLocalization::initializePubSub()
     std::bind(&PCLLocalization::imuReceived, this, std::placeholders::_1));
 
   if (enable_timer_publishing_) {
+    publishing_callback_group_ = create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     auto period = std::chrono::duration<double>(1.0 / pose_publish_frequency_);
     pose_publish_timer_ = create_wall_timer(
       std::chrono::duration_cast<std::chrono::nanoseconds>(period),
-      std::bind(&PCLLocalization::timerPublishPose, this));
+      std::bind(&PCLLocalization::timerPublishPose, this), publishing_callback_group_);
+    pose_publish_timer_->cancel();
   }
 
   RCLCPP_INFO(get_logger(), "initializePubSub end");
@@ -339,6 +364,14 @@ void PCLLocalization::initialPoseReceived(const geometry_msgs::msg::PoseWithCova
   initialpose_recieved_ = true;
   corrent_pose_with_cov_stamped_ptr_ = msg;
   odom_time_initialized_ = false;
+  if (enable_timer_publishing_) {
+    // Do not keep broadcasting the previous correction after a manual reset.
+    {
+      std::lock_guard<std::mutex> lock(publishing_mutex_);
+      cached_transform_valid_ = false;
+    }
+    cachePoseForPublishing(*msg);
+  }
   pose_pub_->publish(*corrent_pose_with_cov_stamped_ptr_);
 
   if(last_scan_ptr_) {
@@ -589,6 +622,10 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   corrent_pose_with_cov_stamped_ptr_->pose.pose.position.z = static_cast<double>(final_transformation(2, 3));
   corrent_pose_with_cov_stamped_ptr_->pose.pose.orientation = quat_msg;
     
+  if (enable_timer_publishing_) {
+    cachePoseForPublishing(*corrent_pose_with_cov_stamped_ptr_);
+  }
+
   // publish here if timer is not enabled
 
   if (!enable_timer_publishing_){
@@ -630,13 +667,14 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
       broadcaster_.sendTransform(map_to_odom_stamped);
     }
 
-    geometry_msgs::msg::PoseStamped::SharedPtr pose_stamped_ptr(new geometry_msgs::msg::PoseStamped);
-    pose_stamped_ptr->header.stamp = msg->header.stamp;
-    pose_stamped_ptr->header.frame_id = global_frame_id_;
-    pose_stamped_ptr->pose = corrent_pose_with_cov_stamped_ptr_->pose.pose;
-    path_ptr_->poses.push_back(*pose_stamped_ptr);
-    path_pub_->publish(*path_ptr_);
   }
+
+  // Record actual localization results, not repeated timer publications.
+  geometry_msgs::msg::PoseStamped pose_stamped;
+  pose_stamped.header = corrent_pose_with_cov_stamped_ptr_->header;
+  pose_stamped.pose = corrent_pose_with_cov_stamped_ptr_->pose.pose;
+  path_ptr_->poses.push_back(pose_stamped);
+  path_pub_->publish(*path_ptr_);
 
   last_scan_ptr_ = msg;
 
@@ -665,58 +703,100 @@ void PCLLocalization::cloudReceived(const sensor_msgs::msg::PointCloud2::ConstSh
   }
 }
 
+bool PCLLocalization::cachePoseForPublishing(
+  const geometry_msgs::msg::PoseWithCovarianceStamped & pose)
+{
+  geometry_msgs::msg::TransformStamped transform;
+  transform.header = pose.header;
+  transform.header.frame_id = global_frame_id_;
+  transform.child_frame_id = base_frame_id_;
+  transform.transform.translation.x = pose.pose.pose.position.x;
+  transform.transform.translation.y = pose.pose.pose.position.y;
+  transform.transform.translation.z = pose.pose.pose.position.z;
+  transform.transform.rotation = pose.pose.pose.orientation;
+
+  if (enable_map_odom_tf_) {
+    try {
+      // Both poses must refer to the SAME time. Combining an old NDT pose
+      // with current odometry would incorrectly cancel the robot's movement.
+      const auto odom_to_base = tfbuffer_.lookupTransform(
+        odom_frame_id_, base_frame_id_, pose.header.stamp,
+        rclcpp::Duration::from_seconds(0.1));
+      tf2::Transform map_to_base_tf, odom_to_base_tf;
+      tf2::fromMsg(transform.transform, map_to_base_tf);
+      tf2::fromMsg(odom_to_base.transform, odom_to_base_tf);
+      transform.transform = tf2::toMsg(map_to_base_tf * odom_to_base_tf.inverse());
+      transform.child_frame_id = odom_frame_id_;
+    } catch (const tf2::TransformException & ex) {
+      RCLCPP_WARN(
+        get_logger(), "Could not update localization correction at the pose timestamp: %s",
+        ex.what());
+      return false;
+    }
+  }
+
+  std::lock_guard<std::mutex> lock(publishing_mutex_);
+  cached_pose_ = pose;  // Keep the original measurement/initial-pose timestamp.
+  cached_transform_ = transform;
+  cached_transform_valid_ = true;
+  return true;
+}
+
+void PCLLocalization::stopTimerPublishing()
+{
+  std::lock_guard<std::mutex> lock(publishing_mutex_);
+  publishing_active_ = false;
+  if (pose_publish_timer_) {
+    pose_publish_timer_->cancel();
+  }
+}
+
 void PCLLocalization::timerPublishPose()
 {
-  if (!corrent_pose_with_cov_stamped_ptr_) {return;}
-  geometry_msgs::msg::PoseWithCovarianceStamped pose_copy = *corrent_pose_with_cov_stamped_ptr_;
-  pose_copy.header.stamp = now();
+  // Only short, non-blocking publication work is done while holding this lock.
+  // NDT and odom integration run separately and never hold it during computation.
+  std::lock_guard<std::mutex> lock(publishing_mutex_);
+  if (!publishing_active_ || !cached_transform_valid_) {
+    return;
+  }
 
-  geometry_msgs::msg::PoseStamped stamped;
-  stamped.header = pose_copy.header;
-  stamped.header.frame_id = global_frame_id_;
-  stamped.pose = pose_copy.pose.pose;
-  path_ptr_->poses.push_back(stamped);
+  const auto publish_time = now();
+  auto transform = cached_transform_;
+  transform.header.stamp = publish_time;
+  broadcaster_.sendTransform(transform);
 
-  nav_msgs::msg::Path path_copy = *path_ptr_;
+  const double result_age = (publish_time - rclcpp::Time(cached_pose_.header.stamp)).seconds();
+  if (result_age > 1.0) {
+    RCLCPP_WARN_THROTTLE(
+      get_logger(), *get_clock(), 5000,
+      "Reusing localization correction: source pose is %.3f sec old", result_age);
+  }
 
-  pose_pub_->publish(pose_copy);
-  path_pub_->publish(path_copy);
-
-  geometry_msgs::msg::TransformStamped map_to_base_link_stamped;
-  map_to_base_link_stamped.header.stamp = pose_copy.header.stamp;
-  map_to_base_link_stamped.header.frame_id = global_frame_id_;
-  map_to_base_link_stamped.child_frame_id = base_frame_id_;
-  map_to_base_link_stamped.transform.translation.x = pose_copy.pose.pose.position.x;
-  map_to_base_link_stamped.transform.translation.y = pose_copy.pose.pose.position.y;
-  map_to_base_link_stamped.transform.translation.z = pose_copy.pose.pose.position.z;
-  map_to_base_link_stamped.transform.rotation = pose_copy.pose.pose.orientation;
-
-  if (!enable_map_odom_tf_) {
-    broadcaster_.sendTransform(map_to_base_link_stamped);
-  } else {
-    tf2::Transform map_to_base_link_tf;
-    tf2::fromMsg(map_to_base_link_stamped.transform, map_to_base_link_tf);
-
-    geometry_msgs::msg::TransformStamped odom_to_base_link_msg;
+  auto pose = cached_pose_;
+  if (enable_map_odom_tf_) {
     try {
-      odom_to_base_link_msg = tfbuffer_.lookupTransform(
-        odom_frame_id_, base_frame_id_, pose_copy.header.stamp, rclcpp::Duration::from_seconds(0.1));
-    } catch (tf2::TransformException & ex) {
-      RCLCPP_WARN(
-        this->get_logger(), "Could not get transform %s to %s: %s",
-        base_frame_id_.c_str(), odom_frame_id_.c_str(), ex.what());
+      // Use the latest available odom TF without waiting for a future 'now' TF.
+      const auto odom_to_base = tfbuffer_.lookupTransform(
+        odom_frame_id_, base_frame_id_, tf2::TimePointZero);
+      tf2::Transform map_to_odom_tf, odom_to_base_tf;
+      tf2::fromMsg(cached_transform_.transform, map_to_odom_tf);
+      tf2::fromMsg(odom_to_base.transform, odom_to_base_tf);
+      const auto map_to_base = map_to_odom_tf * odom_to_base_tf;
+      pose.pose.pose.position.x = map_to_base.getOrigin().x();
+      pose.pose.pose.position.y = map_to_base.getOrigin().y();
+      pose.pose.pose.position.z = map_to_base.getOrigin().z();
+      pose.pose.pose.orientation = tf2::toMsg(map_to_base.getRotation());
+      // This propagated pose belongs to the odometry timestamp, not the NDT timestamp.
+      pose.header.stamp = odom_to_base.header.stamp;
+    } catch (const tf2::TransformException & ex) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 5000,
+        "Correction is being republished, but current odom pose is unavailable: %s", ex.what());
       return;
     }
-    tf2::Transform odom_to_base_link_tf;
-    tf2::fromMsg(odom_to_base_link_msg.transform, odom_to_base_link_tf);
-
-    tf2::Transform map_to_odom_tf = map_to_base_link_tf * odom_to_base_link_tf.inverse();
-    geometry_msgs::msg::TransformStamped map_to_odom_stamped;
-    map_to_odom_stamped.header.stamp = pose_copy.header.stamp;
-    map_to_odom_stamped.header.frame_id = global_frame_id_;
-    map_to_odom_stamped.child_frame_id = odom_frame_id_;
-    map_to_odom_stamped.transform = tf2::toMsg(map_to_odom_tf);
-    
-    broadcaster_.sendTransform(map_to_odom_stamped);
+  } else {
+    // Without an odom frame, explicitly hold the last pose until the next result.
+    pose.header.stamp = publish_time;
   }
+  pose_pub_->publish(pose);
 }
