@@ -24,10 +24,10 @@ def generate_launch_description():
                 'robot_box_position': [0.0, 0.0, 0.0],
                 
                 # Obstacle detection range parameters (X, Y, Z PassThrough filter)
-                'obstacle_detection_range_x_min': -3.0,
-                'obstacle_detection_range_x_max': 3.0,
-                'obstacle_detection_range_y_min': -3.0,
-                'obstacle_detection_range_y_max': 3.0,
+                'obstacle_detection_range_x_min': -5.0,
+                'obstacle_detection_range_x_max': 5.0,
+                'obstacle_detection_range_y_min': -5.0,
+                'obstacle_detection_range_y_max': 5.0,
                 'obstacle_detection_range_z_min': -1.0,
                 'obstacle_detection_range_z_max': 1.3,  # Default: robot_box_size[2] + 0.3
                 'normal_max_slope_angle': 25.0,
@@ -71,8 +71,8 @@ def generate_launch_description():
             parameters=[{
                 'target_frame': 'base_link',  # 空文字列から修正
                 'transform_tolerance': 0.01,
-                'min_height': -1.0,
-                'max_height': 2.0,
+                'min_height': -0.25,
+                'max_height': 1.0,
                 'angle_min': -3.14159,  # -M_PI
                 'angle_max': 3.14159,   # M_PI
                 'angle_increment': 0.0174,  # M_PI/360.0
