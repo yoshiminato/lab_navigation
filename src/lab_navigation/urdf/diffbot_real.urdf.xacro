@@ -1,0 +1,295 @@
+<?xml version="1.0"?>
+<robot name="diffbot" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- launch から渡される -->
+  <xacro:arg name="use_mock_hardware" default="false" />
+
+  <!-- Material definitions -->
+  <xacro:include
+    filename="$(find ros2_control_demo_description)/diffbot/urdf/diffbot.materials.xacro" />
+
+  <!-- ros2_control definition -->
+  <xacro:include
+    filename="$(find ros2_control_diff_drive)/ros2_control/diffbot.ros2_control.xacro" />
+
+  <xacro:macro name="diffbot" params="prefix">
+
+    <!-- =========================
+         Real robot parameters
+         ========================= -->
+
+    <!--
+      ============================
+      実機ロボット用パラメータ設定
+      ============================
+    
+      ■ 車体寸法
+        前後方向（X）: 0.70 m
+        横方向（Y）  : 0.60 m
+        高さ方向（Z）: 0.60 m
+    
+      ■ base_link
+        base_link は車体の幾何学中心に設定
+        地面からの高さは 0.30 m
+        したがって、地面は base_link 基準で z = -0.30 m
+    
+      ■ 車輪
+        車輪半径            : 0.135 m
+        車輪幅              : 0.10 m
+        左右車輪中心間距離  : 0.53 m
+        車輪の前後位置      : 車体中央（x = 0）
+        車輪中心高さ        : 地面から 0.135 m
+        base_link 基準の高さ: z = -0.165 m
+        左車輪位置          : y = -0.265 m
+        右車輪位置          : y = +0.265 m
+    
+      ■ Velodyne VLP-16
+        前後位置            : 車体中央（x = 0）
+        左右位置            : 車体中央（y = 0）
+        傾き                : なし（rpy = 0 0 0）
+        センサ下端高さ      : 地面から 0.43 m
+        センサ高さ          : 0.07 m
+        センサ中心高さ      : 地面から 0.465 m
+        base_link 基準の高さ: z = +0.165 m
+    
+      ■ 補足
+        base_mass、wheel_mass などの質量値は仮設定
+        今回の主目的である TF、LaserScan、Nav2 の確認には大きく影響しないため、
+        現時点では仮値のままとしている
+    -->
+
+    <xacro:property name="PI" value="3.1415926535897931" />
+
+    <!-- Robot body -->
+    <xacro:property name="base_length" value="0.70" />  <!-- X: forward/backward -->
+    <xacro:property name="base_width"  value="0.60" />  <!-- Y: left/right -->
+    <xacro:property name="base_height" value="0.60" />  <!-- Z: height -->
+
+    <!-- Placeholder body mass -->
+    <xacro:property name="base_mass" value="0.3" />
+
+    <!-- Wheels -->
+    <xacro:property name="wheel_mass" value="0.3" />
+    <xacro:property name="wheel_len" value="0.10" />     <!-- wheel width -->
+    <xacro:property name="wheel_radius" value="0.135" />
+    <xacro:property name="wheel_separation" value="0.53" />
+
+    <!-- VLP-16 -->
+    <xacro:property name="vlp_bottom_height_from_ground" value="0.43" />
+    <xacro:property name="vlp_height" value="0.07" />
+
+    <!--
+      Coordinate assumptions:
+      - base_link is the geometric center of the robot body.
+      - Robot body height = 0.60 m, so base_link is 0.30 m above the ground.
+      - Wheel center height = wheel radius = 0.135 m above ground.
+      - VLP-16 bottom = 0.43 m above ground.
+      - VLP-16 center = 0.43 + 0.07/2 = 0.465 m above ground.
+
+      Therefore, relative to base_link:
+      - wheel center z = 0.135 - 0.30 = -0.165 m
+      - VLP center z  = 0.465 - 0.30 = +0.165 m
+    -->
+    <xacro:property
+      name="base_link_height_from_ground"
+      value="${base_height/2}" />
+
+    <xacro:property
+      name="wheel_center_z"
+      value="${wheel_radius - base_link_height_from_ground}" />
+
+    <xacro:property
+      name="wheel_y"
+      value="${wheel_separation/2}" />
+
+    <xacro:property
+      name="vlp_center_z"
+      value="${vlp_bottom_height_from_ground + vlp_height/2 - base_link_height_from_ground}" />
+
+    <!-- =========================
+         Base link
+         ========================= -->
+    <link name="${prefix}base_link">
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <geometry>
+          <box size="${base_length} ${base_width} ${base_height}" />
+        </geometry>
+      </collision>
+
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <geometry>
+          <box size="${base_length} ${base_width} ${base_height}" />
+        </geometry>
+        <material name="orange" />
+      </visual>
+
+      <inertial>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <mass value="${base_mass}" />
+        <inertia
+          ixx="${base_mass / 12.0 * (base_width*base_width + base_height*base_height)}"
+          ixy="0.0"
+          ixz="0.0"
+          iyy="${base_mass / 12.0 * (base_length*base_length + base_height*base_height)}"
+          iyz="0.0"
+          izz="${base_mass / 12.0 * (base_length*base_length + base_width*base_width)}" />
+      </inertial>
+    </link>
+
+    <!-- =========================
+         Left wheel
+         ========================= -->
+    <joint name="${prefix}left_wheel_joint" type="continuous">
+      <parent link="${prefix}base_link" />
+      <child link="${prefix}left_wheel" />
+      <origin xyz="0 -${wheel_y} ${wheel_center_z}" rpy="0 0 0" />
+      <axis xyz="0 1 0" />
+      <dynamics damping="0.2" />
+      <limit effort="100" velocity="1.0" />
+    </joint>
+
+    <link name="${prefix}left_wheel">
+      <collision>
+        <origin xyz="0 0 0" rpy="${PI/2} 0 0" />
+        <geometry>
+          <cylinder length="${wheel_len}" radius="${wheel_radius}" />
+        </geometry>
+      </collision>
+
+      <visual>
+        <origin xyz="0 0 0" rpy="${PI/2} 0 0" />
+        <geometry>
+          <cylinder length="${wheel_len}" radius="${wheel_radius}" />
+        </geometry>
+        <material name="black" />
+      </visual>
+
+      <inertial>
+        <origin xyz="0 0 0" rpy="${PI/2} 0 0" />
+        <mass value="${wheel_mass}" />
+        <inertia
+          ixx="${wheel_mass / 12.0 * (3*wheel_radius*wheel_radius + wheel_len*wheel_len)}"
+          ixy="0.0"
+          ixz="0.0"
+          iyy="${wheel_mass / 12.0 * (3*wheel_radius*wheel_radius + wheel_len*wheel_len)}"
+          iyz="0.0"
+          izz="${wheel_mass / 2.0 * wheel_radius*wheel_radius}" />
+      </inertial>
+    </link>
+
+    <!-- =========================
+         Right wheel
+         ========================= -->
+    <joint name="${prefix}right_wheel_joint" type="continuous">
+      <parent link="${prefix}base_link" />
+      <child link="${prefix}right_wheel" />
+      <origin xyz="0 ${wheel_y} ${wheel_center_z}" rpy="0 0 0" />
+      <axis xyz="0 1 0" />
+      <dynamics damping="0.2" />
+      <limit effort="100" velocity="1.0" />
+    </joint>
+
+    <link name="${prefix}right_wheel">
+      <collision>
+        <origin xyz="0 0 0" rpy="${PI/2} 0 0" />
+        <geometry>
+          <cylinder length="${wheel_len}" radius="${wheel_radius}" />
+        </geometry>
+      </collision>
+
+      <visual>
+        <origin xyz="0 0 0" rpy="${PI/2} 0 0" />
+        <geometry>
+          <cylinder length="${wheel_len}" radius="${wheel_radius}" />
+        </geometry>
+        <material name="black" />
+      </visual>
+
+      <inertial>
+        <origin xyz="0 0 0" rpy="${PI/2} 0 0" />
+        <mass value="${wheel_mass}" />
+        <inertia
+          ixx="${wheel_mass / 12.0 * (3*wheel_radius*wheel_radius + wheel_len*wheel_len)}"
+          ixy="0.0"
+          ixz="0.0"
+          iyy="${wheel_mass / 12.0 * (3*wheel_radius*wheel_radius + wheel_len*wheel_len)}"
+          iyz="0.0"
+          izz="${wheel_mass / 2.0 * wheel_radius*wheel_radius}" />
+      </inertial>
+    </link>
+
+    <!-- =========================
+         Velodyne VLP-16
+         ========================= -->
+    <joint name="${prefix}scan_joint" type="fixed">
+      <parent link="${prefix}base_link" />
+      <child link="${prefix}velodyne" />
+      <origin xyz="0 0 ${vlp_center_z}" rpy="0 0 0" />
+    </joint>
+
+    <link name="${prefix}velodyne">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <geometry>
+          <mesh
+            filename="package://ros2_control_demo_description/diffbot/meshes/sensors/lds.stl"
+            scale="0.001 0.001 0.001" />
+        </geometry>
+        <material name="dark" />
+      </visual>
+
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <geometry>
+          <cylinder length="${vlp_height}" radius="0.052" />
+        </geometry>
+      </collision>
+
+      <inertial>
+        <mass value="0.114" />
+        <origin xyz="0 0 0" />
+        <inertia
+          ixx="0.001"
+          ixy="0.0"
+          ixz="0.0"
+          iyy="0.001"
+          iyz="0.0"
+          izz="0.001" />
+      </inertial>
+    </link>
+
+  </xacro:macro>
+
+  <!-- =========================
+       Robot instance
+       ========================= -->
+
+  <!--
+    上で定義した diffbot マクロを実際に展開する。
+    この記述が無い場合、base_link や wheel などは
+    robot_description 内に生成されない。
+  -->
+  <xacro:diffbot prefix="" />
+
+  <!-- =========================
+       ros2_control
+       ========================= -->
+
+  <!--
+    ros2_control_diff_drive 側で定義されている
+    diffbot_ros2_control マクロを展開する。
+
+    use_mock_hardware=false:
+      実機用ハードウェアを使用する
+
+    use_mock_hardware=true:
+      ros2_control の mock hardware を使用する
+  -->
+  <xacro:diffbot_ros2_control
+    name="DiffBot"
+    prefix=""
+    use_mock_hardware="$(arg use_mock_hardware)" />
+
+</robot>
