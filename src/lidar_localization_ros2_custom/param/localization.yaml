@@ -9,7 +9,7 @@
       transform_epsilon: 0.01
       voxel_leaf_size: 0.2
       scan_max_range: 100.0
-      scan_min_range: 1.0
+      scan_min_range: 0.6
       scan_period: 0.1
       use_pcd_map: true
       map_path: ""
