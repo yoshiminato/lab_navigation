@@ -20,7 +20,7 @@ def generate_launch_description():
                 'output_topic': '/cloud_in', # pointcloud_to_laserscanに入力
                 'ground_remove_algorithm': 'PMF',  # 'NOMAL' or 'PMF'
                 'voxel_leaf_size': 0.1,
-                'robot_box_size': [1.0, 1.5, 1.0],
+                'robot_box_size': [0.7, 0.6, 0.6],
                 'robot_box_position': [0.0, 0.0, 0.0],
                 
                 # Obstacle detection range parameters (X, Y, Z PassThrough filter)
@@ -33,7 +33,7 @@ def generate_launch_description():
                 'normal_max_slope_angle': 25.0,
                 'pmf_max_window_size': 15,
                 'pmf_slope': 1.0,
-                'pmf_initial_distance': 0.15,
+                'pmf_initial_distance': 0.03,
                 'pmf_max_distance': 3.0,
                 'pmf_cell_size': 0.05,
                 
@@ -71,13 +71,13 @@ def generate_launch_description():
             parameters=[{
                 'target_frame': 'base_link',  # 空文字列から修正
                 'transform_tolerance': 0.01,
-                'min_height': -0.25,
+                'min_height': -0.30,
                 'max_height': 1.0,
                 'angle_min': -3.14159,  # -M_PI
                 'angle_max': 3.14159,   # M_PI
                 'angle_increment': 0.0174,  # M_PI/360.0
                 'scan_time': 0.1,
-                'range_min': 1.0,
+                'range_min': 0.6,
                 'range_max': 40.0,
                 'use_inf': True,
                 'inf_epsilon': 1.0
