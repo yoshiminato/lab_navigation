@@ -12,6 +12,9 @@ from launch import LaunchDescription
 from launch_ros.actions import LifecycleNode
 from launch_ros.actions import Node
 
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
+
 import lifecycle_msgs.msg
 
 from ament_index_python.packages import get_package_share_directory
@@ -19,7 +22,15 @@ from ament_index_python.packages import get_package_share_directory
 def generate_launch_description():
 
     ld = launch.LaunchDescription()
+    
+    use_sim_time = LaunchConfiguration('use_sim_time')
 
+    declare_use_sim_time = DeclareLaunchArgument(
+        'use_sim_time',
+        default_value='false',
+        description='Use simulation clock if true'
+    )
+    
     lidar_tf = launch_ros.actions.Node(
         name='lidar_tf',
         package='tf2_ros',
@@ -46,7 +57,10 @@ def generate_launch_description():
         namespace='',
         package='lidar_localization_ros2_custom',
         executable='lidar_localization_node',
-        parameters=[localization_param_dir],
+        parameters=[
+            localization_param_dir,
+            {'use_sim_time': use_sim_time}
+        ],
         remappings=[('/cloud','/velodyne_points')],
         output='screen')
 
@@ -86,6 +100,7 @@ def generate_launch_description():
         )
     )
 
+    ld.add_action(declare_use_sim_time)
     ld.add_action(from_unconfigured_to_inactive)
     ld.add_action(from_inactive_to_active)
 

@@ -270,10 +270,12 @@ global_costmap:
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
+        min_obstacle_height: -1.0
         enabled: True
         observation_sources: scan
         scan:
           topic: /scan
+          min_obstacle_height: -1.0
           max_obstacle_height: 2.0
           clearing: True
           marking: True
@@ -297,7 +299,7 @@ map_server:
     use_sim_time: false
     # Overridden in launch by the "map" launch configuration or provided default value.
     # To use in yaml, remove the default "map" value in the tb3_simulation_launch.py file & provide full path to map below.
-    yaml_filename: "/home/user/lab_navigation_ws/src/lab_navigation/map/hv_building_lab/hv_building_lab.yaml"
+    yaml_filename: "/home/user/lab_navigation_ws/src/lab_navigation/map/simulation/simulation.yaml"
 
 map_saver:
   ros__parameters:
