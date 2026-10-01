@@ -9,11 +9,11 @@ def generate_launch_description():
     # Paths retained from the currently working configuration.
     declare_pcd_file_path_cmd = DeclareLaunchArgument(
         'pcd_file_path',
-        default_value='/home/user/lab_navigation_ws/src/lab_navigation/pcd/simulation.pcd',
+        default_value='/home/user/lab_navigation_ws/src/lab_navigation/pcd/hv_building_lab.pcd',
     )
     declare_map_yaml_file_path_cmd = DeclareLaunchArgument(
         'map_yaml_file_path',
-        default_value='/home/user/lab_navigation_ws/src/lab_navigation/map/simulation/simulation.yaml',
+        default_value='/home/user/lab_navigation_ws/src/lab_navigation/map/hv_building_lab/hv_building_lab.yaml',
     )
     declare_nav2_params_file_path_cmd = DeclareLaunchArgument(
         'nav2_params_file_path',
@@ -107,7 +107,7 @@ def generate_launch_description():
             'gnome-terminal', '--tab', '--title=nav2', '--',
             'bash', '-c', [
                 'ros2 launch nav2_bringup navigation_launch.py ',
-                'use_sim_time:=true params_file:=',
+                'use_sim_time:=false params_file:=',
                 LaunchConfiguration('nav2_params_file_path'),
                 ' log_level:=info; exec bash',
             ],
