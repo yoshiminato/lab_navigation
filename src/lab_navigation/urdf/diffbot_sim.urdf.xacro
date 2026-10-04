@@ -1,131 +1,138 @@
-<?xml version="1.0"?>
-<robot name="diffbot" xmlns:xacro="http://www.ros.org/wiki/xacro">
+<?xml version='1.0' encoding='UTF-8'?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="diffbot">
 
   <!-- launch から渡される -->
-  <xacro:arg name="use_mock_hardware" default="false" />
+  <xacro:arg name="use_mock_hardware" default="false"/>
 
   <!-- Material definitions -->
-  <xacro:include
-    filename="$(find ros2_control_demo_description)/diffbot/urdf/diffbot.materials.xacro" />
+  <xacro:include filename="$(find ros2_control_demo_description)/diffbot/urdf/diffbot.materials.xacro"/>
 
   <!-- 前後に設置する低摩擦の球形支持 -->
   <xacro:macro name="support_ball" params="prefix name x z radius mass">
+
     <joint name="${prefix}${name}_joint" type="fixed">
-      <parent link="${prefix}base_link" />
-      <child link="${prefix}${name}" />
-      <origin xyz="${x} 0 ${z}" rpy="0 0 0" />
+      <parent link="${prefix}base_link"/>
+      <child link="${prefix}${name}"/>
+      <origin xyz="${x} 0 ${z}" rpy="0 0 0"/>
     </joint>
+
     <link name="${prefix}${name}">
       <collision>
-        <geometry><sphere radius="${radius}" /></geometry>
+        <geometry>
+          <sphere radius="${radius}"/>
+        </geometry>
       </collision>
+
       <visual>
-        <geometry><sphere radius="${radius}" /></geometry>
-        <material name="black" />
+        <geometry>
+          <sphere radius="${radius}"/>
+        </geometry>
+        <material name="black"/>
       </visual>
+
       <inertial>
-        <mass value="${mass}" />
+        <mass value="${mass}"/>
         <inertia
-          ixx="${2.0 / 5.0 * mass * radius * radius}" ixy="0" ixz="0"
-          iyy="${2.0 / 5.0 * mass * radius * radius}" iyz="0"
-          izz="${2.0 / 5.0 * mass * radius * radius}" />
+          ixx="${2.0 / 5.0 * mass * radius * radius}"
+          ixy="0"
+          ixz="0"
+          iyy="${2.0 / 5.0 * mass * radius * radius}"
+          iyz="0"
+          izz="${2.0 / 5.0 * mass * radius * radius}"/>
       </inertial>
     </link>
+
     <gazebo reference="${prefix}${name}">
       <mu1>0.01</mu1>
       <mu2>0.01</mu2>
     </gazebo>
+
   </xacro:macro>
+
 
   <xacro:macro name="diffbot" params="prefix">
 
-    <!-- base_link は地面から 0.215 m。車体上端は 0.43 m、
-         車体下端は 0.05 m。前後の補助球は床から 1 mm 浮く。 -->
+    <!--
+      base_link は地面から 0.215 m。
+      車体上端は 0.43 m。
+      車体下端は 0.05 m。
+      前後の補助球は床から 1 mm 浮く。
+    -->
 
-    <xacro:property name="PI" value="3.1415926535897931" />
+    <xacro:property name="PI" value="3.1415926535897931"/>
 
     <!-- Robot body -->
-    <xacro:property name="base_bottom_raise" value="0.05" />
-    <xacro:property name="base_box_height" value="${base_height - base_bottom_raise}" />
-    <xacro:property name="base_box_center_z" value="${base_bottom_raise / 2}" />
-    <xacro:property name="base_length" value="0.70" />
-    <xacro:property name="base_width"  value="0.60" />
-    <xacro:property name="base_height" value="0.43" />
+    <xacro:property name="base_bottom_raise" value="0.05"/>
+    <xacro:property name="base_box_height" value="${base_height - base_bottom_raise}"/>
+    <xacro:property name="base_box_center_z" value="${base_bottom_raise / 2}"/>
+    <xacro:property name="base_length" value="0.70"/>
+    <xacro:property name="base_width" value="0.60"/>
+    <xacro:property name="base_height" value="0.43"/>
 
     <!-- Placeholder body mass -->
-    <xacro:property name="base_mass" value="0.3" />
+    <xacro:property name="base_mass" value="0.3"/>
 
     <!-- Wheels -->
-    <xacro:property name="wheel_mass" value="0.3" />
-    <xacro:property name="wheel_len" value="0.10" />
-    <xacro:property name="wheel_radius" value="0.135" />
-    <xacro:property name="wheel_separation" value="0.53" />
+    <xacro:property name="wheel_mass" value="0.3"/>
+    <xacro:property name="wheel_len" value="0.10"/>
+    <xacro:property name="wheel_radius" value="0.135"/>
+    <xacro:property name="wheel_separation" value="0.53"/>
 
-    <!-- 駆動輪を主な接地点にし、前後の傾きを補助球で支える。 -->
-    <xacro:property name="support_radius" value="0.03" />
-    <xacro:property name="support_mass" value="0.02" />
-    <xacro:property name="support_x" value="0.25" />
-    <xacro:property name="support_ground_clearance" value="0.001" />
+    <!-- 駆動輪を主な接地点にし、前後の傾きを補助球で支える -->
+    <xacro:property name="support_radius" value="0.03"/>
+    <xacro:property name="support_mass" value="0.02"/>
+    <xacro:property name="support_x" value="0.25"/>
+    <xacro:property name="support_ground_clearance" value="0.001"/>
 
     <!-- VLP-16 -->
-    <xacro:property name="vlp_bottom_height_from_ground" value="0.43" />
-    <xacro:property name="vlp_height" value="0.07" />
-
-    <!--
-      Coordinate assumptions:
-      - base_link remains at its original height of 0.215 m above ground.
-      - The body bottom is 0.05 m above ground; its top stays at 0.43 m.
-      - Wheel center height = wheel radius = 0.135 m above ground.
-      - VLP-16 bottom = 0.43 m above ground.
-      - VLP-16 center = 0.43 + 0.07/2 = 0.465 m above ground.
-    -->
+    <xacro:property name="vlp_bottom_height_from_ground" value="0.43"/>
+    <xacro:property name="vlp_height" value="0.07"/>
 
     <xacro:property
       name="base_link_height_from_ground"
-      value="${base_height/2}" />
+      value="${base_height/2}"/>
 
     <xacro:property
       name="wheel_center_z"
-      value="${wheel_radius - base_link_height_from_ground}" />
+      value="${wheel_radius - base_link_height_from_ground}"/>
 
     <xacro:property
       name="wheel_y"
-      value="${wheel_separation/2}" />
+      value="${wheel_separation/2}"/>
 
     <xacro:property
       name="support_center_z"
-      value="${support_radius + support_ground_clearance - base_link_height_from_ground}" />
+      value="${support_radius + support_ground_clearance - base_link_height_from_ground}"/>
 
     <xacro:property
       name="vlp_center_z"
-      value="${vlp_bottom_height_from_ground + vlp_height/2 - base_link_height_from_ground}" />
+      value="${vlp_bottom_height_from_ground + vlp_height/2 - base_link_height_from_ground}"/>
 
 
-    <!-- =========================
+    <!-- =========================================================
          Base link
-         ========================= -->
+         ========================================================= -->
 
     <link name="${prefix}base_link">
 
       <collision>
-        <origin xyz="0 0 ${base_box_center_z}" rpy="0 0 0" />
+        <origin xyz="0 0 ${base_box_center_z}" rpy="0 0 0"/>
         <geometry>
-          <box size="${base_length} ${base_width} ${base_box_height}" />
+          <box size="${base_length} ${base_width} ${base_box_height}"/>
         </geometry>
       </collision>
 
       <visual>
-        <origin xyz="0 0 ${base_box_center_z}" rpy="0 0 0" />
+        <origin xyz="0 0 ${base_box_center_z}" rpy="0 0 0"/>
         <geometry>
-          <box size="${base_length} ${base_width} ${base_box_height}" />
+          <box size="${base_length} ${base_width} ${base_box_height}"/>
         </geometry>
-        <material name="orange" />
+        <material name="orange"/>
       </visual>
 
       <inertial>
-        <origin xyz="0 0 ${base_box_center_z}" rpy="0 0 0" />
-
-        <mass value="${base_mass}" />
+        <origin xyz="0 0 ${base_box_center_z}" rpy="0 0 0"/>
+        <mass value="${base_mass}"/>
 
         <inertia
           ixx="${base_mass / 12.0 * (base_width*base_width + base_box_height*base_box_height)}"
@@ -133,78 +140,69 @@
           ixz="0.0"
           iyy="${base_mass / 12.0 * (base_length*base_length + base_box_height*base_box_height)}"
           iyz="0.0"
-          izz="${base_mass / 12.0 * (base_length*base_length + base_width*base_width)}" />
-
+          izz="${base_mass / 12.0 * (base_length*base_length + base_width*base_width)}"/>
       </inertial>
 
     </link>
 
 
-    <!-- =========================
+    <!-- =========================================================
          Left wheel
-         ========================= -->
+         ========================================================= -->
 
     <joint name="${prefix}left_wheel_joint" type="continuous">
 
-      <parent link="${prefix}base_link" />
-      <child link="${prefix}left_wheel" />
+      <parent link="${prefix}base_link"/>
+      <child link="${prefix}left_wheel"/>
 
       <origin
         xyz="0 ${wheel_y} ${wheel_center_z}"
-        rpy="0 0 0" />
+        rpy="0 0 0"/>
 
-      <axis xyz="0 1 0" />
+      <axis xyz="0 1 0"/>
 
-      <dynamics damping="0.2" />
+      <dynamics damping="0.2"/>
 
       <limit
         effort="100"
-        velocity="3.0" />
+        velocity="3.0"/>
 
     </joint>
-
 
     <link name="${prefix}left_wheel">
 
       <collision>
-
         <origin
           xyz="0 0 0"
-          rpy="${PI/2} 0 0" />
+          rpy="${PI/2} 0 0"/>
 
         <geometry>
           <cylinder
             length="${wheel_len}"
-            radius="${wheel_radius}" />
+            radius="${wheel_radius}"/>
         </geometry>
-
       </collision>
 
-
       <visual>
-
         <origin
           xyz="0 0 0"
-          rpy="${PI/2} 0 0" />
+          rpy="${PI/2} 0 0"/>
 
         <geometry>
           <cylinder
             length="${wheel_len}"
-            radius="${wheel_radius}" />
+            radius="${wheel_radius}"/>
         </geometry>
 
-        <material name="black" />
-
+        <material name="black"/>
       </visual>
 
-
       <inertial>
-
         <origin
           xyz="0 0 0"
-          rpy="${PI/2} 0 0" />
+          rpy="${PI/2} 0 0"/>
 
-        <mass value="${wheel_mass}" />
+        <mass value="${wheel_mass}"/>
 
         <inertia
           ixx="${wheel_mass / 12.0 * (3*wheel_radius*wheel_radius + wheel_len*wheel_len)}"
@@ -212,78 +210,69 @@
           ixz="0.0"
           iyy="${wheel_mass / 12.0 * (3*wheel_radius*wheel_radius + wheel_len*wheel_len)}"
           iyz="0.0"
-          izz="${wheel_mass / 2.0 * wheel_radius*wheel_radius}" />
-
+          izz="${wheel_mass / 2.0 * wheel_radius*wheel_radius}"/>
       </inertial>
 
     </link>
 
 
-    <!-- =========================
+    <!-- =========================================================
          Right wheel
-         ========================= -->
+         ========================================================= -->
 
     <joint name="${prefix}right_wheel_joint" type="continuous">
 
-      <parent link="${prefix}base_link" />
-      <child link="${prefix}right_wheel" />
+      <parent link="${prefix}base_link"/>
+      <child link="${prefix}right_wheel"/>
 
       <origin
         xyz="0 -${wheel_y} ${wheel_center_z}"
-        rpy="0 0 0" />
+        rpy="0 0 0"/>
 
-      <axis xyz="0 1 0" />
+      <axis xyz="0 1 0"/>
 
-      <dynamics damping="0.2" />
+      <dynamics damping="0.2"/>
 
       <limit
         effort="100"
-        velocity="3.0" />
+        velocity="3.0"/>
 
     </joint>
-
 
     <link name="${prefix}right_wheel">
 
       <collision>
-
         <origin
           xyz="0 0 0"
-          rpy="${PI/2} 0 0" />
+          rpy="${PI/2} 0 0"/>
 
         <geometry>
           <cylinder
             length="${wheel_len}"
-            radius="${wheel_radius}" />
+            radius="${wheel_radius}"/>
         </geometry>
-
       </collision>
 
-
       <visual>
-
         <origin
           xyz="0 0 0"
-          rpy="${PI/2} 0 0" />
+          rpy="${PI/2} 0 0"/>
 
         <geometry>
           <cylinder
             length="${wheel_len}"
-            radius="${wheel_radius}" />
+            radius="${wheel_radius}"/>
         </geometry>
 
-        <material name="black" />
-
+        <material name="black"/>
       </visual>
 
-
       <inertial>
-
         <origin
           xyz="0 0 0"
-          rpy="${PI/2} 0 0" />
+          rpy="${PI/2} 0 0"/>
 
-        <mass value="${wheel_mass}" />
+        <mass value="${wheel_mass}"/>
 
         <inertia
           ixx="${wheel_mass / 12.0 * (3*wheel_radius*wheel_radius + wheel_len*wheel_len)}"
@@ -291,128 +280,117 @@
           ixz="0.0"
           iyy="${wheel_mass / 12.0 * (3*wheel_radius*wheel_radius + wheel_len*wheel_len)}"
           iyz="0.0"
-          izz="${wheel_mass / 2.0 * wheel_radius*wheel_radius}" />
-
+          izz="${wheel_mass / 2.0 * wheel_radius*wheel_radius}"/>
       </inertial>
 
     </link>
 
 
-    <!-- 前後の球形補助接地点。旋回中は低摩擦で床を滑る。 -->
-    <xacro:support_ball prefix="${prefix}" name="front_support"
-      x="${support_x}" z="${support_center_z}"
-      radius="${support_radius}" mass="${support_mass}" />
-    <xacro:support_ball prefix="${prefix}" name="rear_support"
-      x="${-support_x}" z="${support_center_z}"
-      radius="${support_radius}" mass="${support_mass}" />
+    <!-- 前後の球形補助接地点 -->
 
-    <!-- =========================
+    <xacro:support_ball
+      prefix="${prefix}"
+      name="front_support"
+      x="${support_x}"
+      z="${support_center_z}"
+      radius="${support_radius}"
+      mass="${support_mass}"/>
+
+    <xacro:support_ball
+      prefix="${prefix}"
+      name="rear_support"
+      x="${-support_x}"
+      z="${support_center_z}"
+      radius="${support_radius}"
+      mass="${support_mass}"/>
+
+
+    <!-- =========================================================
          Velodyne VLP-16
-         ========================= -->
+         ========================================================= -->
 
     <joint name="${prefix}scan_joint" type="fixed">
 
-      <parent link="${prefix}base_link" />
-
-      <child link="${prefix}velodyne" />
+      <parent link="${prefix}base_link"/>
+      <child link="${prefix}velodyne"/>
 
       <origin
         xyz="0 0 ${vlp_center_z}"
-        rpy="0 0 0" />
+        rpy="0 0 0"/>
 
     </joint>
 
-
     <link name="${prefix}velodyne">
-
 
       <!-- VLP-16 下部 -->
 
       <visual>
-
         <origin
           xyz="0 0 -0.023"
-          rpy="0 0 0" />
+          rpy="0 0 0"/>
 
         <geometry>
           <cylinder
             length="0.024"
-            radius="0.052" />
+            radius="0.052"/>
         </geometry>
 
         <material name="velodyne_black">
-          <color rgba="0.08 0.08 0.08 1.0" />
+          <color rgba="0.08 0.08 0.08 1.0"/>
         </material>
-
       </visual>
-
 
       <!-- VLP-16 中央の青い部分 -->
 
       <visual>
-
         <origin
           xyz="0 0 0"
-          rpy="0 0 0" />
+          rpy="0 0 0"/>
 
         <geometry>
           <cylinder
             length="0.022"
-            radius="0.050" />
+            radius="0.050"/>
         </geometry>
 
         <material name="velodyne_blue">
-          <color rgba="0.05 0.25 0.55 1.0" />
+          <color rgba="0.05 0.25 0.55 1.0"/>
         </material>
-
       </visual>
-
 
       <!-- VLP-16 上部 -->
 
       <visual>
-
         <origin
           xyz="0 0 0.023"
-          rpy="0 0 0" />
+          rpy="0 0 0"/>
 
         <geometry>
           <cylinder
             length="0.024"
-            radius="0.052" />
+            radius="0.052"/>
         </geometry>
 
         <material name="velodyne_black_top">
-          <color rgba="0.08 0.08 0.08 1.0" />
+          <color rgba="0.08 0.08 0.08 1.0"/>
         </material>
-
       </visual>
 
-
-      <!-- 当たり判定 -->
-
       <collision>
-
         <origin
           xyz="0 0 0"
-          rpy="0 0 0" />
+          rpy="0 0 0"/>
 
         <geometry>
           <cylinder
             length="${vlp_height}"
-            radius="0.052" />
+            radius="0.052"/>
         </geometry>
-
       </collision>
 
-
-      <!-- 質量・慣性 -->
-
       <inertial>
-
-        <mass value="0.114" />
-
-        <origin xyz="0 0 0" />
+        <mass value="0.114"/>
+        <origin xyz="0 0 0"/>
 
         <inertia
           ixx="0.001"
@@ -420,29 +398,84 @@
           ixz="0.0"
           iyy="0.001"
           iyz="0.0"
-          izz="0.001" />
-
+          izz="0.001"/>
       </inertial>
 
     </link>
 
 
+    <!-- =========================================================
+         Front RGB Camera
+         ========================================================= -->
+
+    <joint name="${prefix}camera_joint" type="fixed">
+
+      <parent link="${prefix}base_link"/>
+      <child link="${prefix}camera_link"/>
+
+      <!--
+        base_length = 0.70 m
+        車体前端は x=0.35 m 付近なので
+        x=0.37 m として少し前へ出す
+      -->
+      <origin
+        xyz="0.37 0 0.10"
+        rpy="0 0 0"/>
+
+    </joint>
+
+    <link name="${prefix}camera_link">
+
+      <visual>
+        <geometry>
+          <box size="0.04 0.06 0.04"/>
+        </geometry>
+        <material name="black"/>
+      </visual>
+
+      <inertial>
+        <mass value="0.05"/>
+
+        <inertia
+          ixx="0.00002"
+          ixy="0"
+          ixz="0"
+          iyy="0.00002"
+          iyz="0"
+          izz="0.00002"/>
+      </inertial>
+
+    </link>
+
+
+    <!--
+      ROS Camera Optical Frame
+      x = 右
+      y = 下
+      z = 前
+    -->
+
+    <joint name="${prefix}camera_optical_joint" type="fixed">
+
+      <parent link="${prefix}camera_link"/>
+      <child link="${prefix}camera_optical_frame"/>
+
+      <origin
+        xyz="0 0 0"
+        rpy="-${PI/2} 0 -${PI/2}"/>
+
+    </joint>
+
+    <link name="${prefix}camera_optical_frame"/>
+
   </xacro:macro>
 
 
-
-  <!-- =========================
+  <!-- =========================================================
        Robot instance
-       ========================= -->
+       ========================================================= -->
 
-  <!--
-    上で定義した diffbot マクロを実際に展開する。
-    この記述が無い場合、base_link や wheel などは
-    robot_description 内に生成されない。
-  -->
-
-  <xacro:diffbot prefix="" />
-
+  <xacro:diffbot prefix=""/>
 
 
   <!-- =========================================================
@@ -451,16 +484,12 @@
 
   <gazebo reference="velodyne">
 
-
-    <!-- =========================
-         GPU LiDAR
-         ========================= -->
+    <!-- GPU LiDAR -->
 
     <sensor
       name="velodyne_gpu_lidar"
       type="gpu_lidar">
 
-      <!-- Gazebo側の基本トピック名 -->
       <topic>velodyne</topic>
 
       <update_rate>10</update_rate>
@@ -469,75 +498,37 @@
 
         <scan>
 
-          <!-- 水平360度 -->
-
           <horizontal>
-
             <samples>1800</samples>
-
             <resolution>1</resolution>
-
             <min_angle>-3.141592653589793</min_angle>
-
             <max_angle>3.141592653589793</max_angle>
-
           </horizontal>
 
-
-          <!--
-            VLP-16相当
-            16層
-            上下 ±15度
-          -->
-
           <vertical>
-
             <samples>16</samples>
-
             <resolution>1</resolution>
-
             <min_angle>-0.261799</min_angle>
-
             <max_angle>0.261799</max_angle>
-
           </vertical>
 
         </scan>
 
-
         <range>
-
           <min>0.3</min>
-
           <max>100.0</max>
-
           <resolution>0.01</resolution>
-
         </range>
 
       </ray>
 
-
       <always_on>true</always_on>
-
       <visualize>true</visualize>
 
     </sensor>
 
 
-
-    <!-- =========================================================
-         IMU
-         
-         velodyne リンクに取り付けることで
-         LiDAR と完全に同じ位置・姿勢になる
-         
-         Gazebo topic:
-           /imu
-         
-         ROS2では ros_gz_bridge を介して
-         sensor_msgs/msg/Imu として使用する
-         ========================================================= -->
+    <!-- IMU -->
 
     <sensor
       name="imu_sensor"
@@ -545,64 +536,99 @@
 
       <topic>imu</topic>
 
-      <!-- 100 Hz -->
       <update_rate>100</update_rate>
 
       <always_on>true</always_on>
-
       <visualize>false</visualize>
 
     </sensor>
 
+  </gazebo>
+
+
+  <!-- =========================================================
+       Gazebo RGB Camera
+       ========================================================= -->
+
+  <gazebo reference="camera_link">
+
+    <sensor
+      name="front_camera"
+      type="camera">
+
+      <always_on>true</always_on>
+
+      <update_rate>30</update_rate>
+
+      <visualize>true</visualize>
+
+      <!-- Gazebo側の画像トピック -->
+      <topic>/camera/image_raw</topic>
+
+      <camera>
+
+        <!-- Gazebo側のCameraInfoトピック -->
+        <camera_info_topic>
+          /camera/camera_info
+        </camera_info_topic>
+
+        <!-- 水平画角 60 deg -->
+        <horizontal_fov>1.0471975512</horizontal_fov>
+
+        <image>
+          <width>640</width>
+          <height>480</height>
+          <format>R8G8B8</format>
+        </image>
+
+        <clip>
+          <near>0.05</near>
+          <far>100.0</far>
+        </clip>
+
+      </camera>
+
+    </sensor>
 
   </gazebo>
 
 
-
-  <!-- =========================
+  <!-- =========================================================
        ros2_control for Gazebo
-       ========================= -->
+       ========================================================= -->
 
   <ros2_control
     name="GazeboSimSystem"
     type="system">
 
     <hardware>
-
       <plugin>gz_ros2_control/GazeboSimSystem</plugin>
-
     </hardware>
-
 
     <joint name="left_wheel_joint">
 
-      <command_interface name="velocity" />
+      <command_interface name="velocity"/>
 
-      <state_interface name="position" />
-
-      <state_interface name="velocity" />
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
 
     </joint>
-
 
     <joint name="right_wheel_joint">
 
-      <command_interface name="velocity" />
+      <command_interface name="velocity"/>
 
-      <state_interface name="position" />
-
-      <state_interface name="velocity" />
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
 
     </joint>
-
 
   </ros2_control>
 
 
-
-  <!-- =========================
+  <!-- =========================================================
        gz_ros2_control plugin
-       ========================= -->
+       ========================================================= -->
 
   <gazebo>
 
@@ -610,25 +636,20 @@
       filename="gz_ros2_control-system"
       name="gz_ros2_control::GazeboSimROS2ControlPlugin">
 
-
       <robot_param>
         robot_description
       </robot_param>
-
 
       <robot_param_node>
         robot_state_publisher
       </robot_param_node>
 
-
       <parameters>
         $(find lab_navigation)/params/sim_diff_drive_controller.yaml
       </parameters>
 
-
     </plugin>
 
   </gazebo>
-
 
 </robot>

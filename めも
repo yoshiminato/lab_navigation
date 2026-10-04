@@ -95,3 +95,9 @@ ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
 
 // "config_odometry": "config_odometry_gpu.json",
 "config_odometry_ct.json",
+
+
+
+GUIでcmdvelヲ発行
+
+ros2 run rqt_robot_steering rqt_robot_steering
