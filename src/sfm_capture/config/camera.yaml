@@ -1,0 +1,26 @@
+# usb_cam 0.8.1 + the workspace timestamp fix. Fixed resolution throughout a session.
+/**:
+  ros__parameters:
+    video_device: /dev/video0
+    framerate: 10.0
+    io_method: mmap
+    pixel_format: mjpeg2rgb
+    av_device_format: YUV422P
+    image_width: 1920
+    image_height: 1080
+    frame_id: camera_optical_frame
+    camera_name: sfm_camera
+    # No fictitious/sample calibration. Set a file:///absolute/path.yaml when calibrated.
+    camera_info_url: ""
+    brightness: -1
+    contrast: -1
+    saturation: -1
+    sharpness: -1
+    gain: -1
+    auto_white_balance: true
+    white_balance: 4000
+    autoexposure: false
+    exposure: 50
+    # Set the lens focus first. Disabled AF retains the current focus where supported.
+    autofocus: false
+    focus: -1

@@ -573,7 +573,7 @@
         </camera_info_topic>
 
         <!-- 水平画角 60 deg -->
-        <horizontal_fov>1.0471975512</horizontal_fov>
+        <horizontal_fov>2.0943951024</horizontal_fov>
 
         <image>
           <width>640</width>

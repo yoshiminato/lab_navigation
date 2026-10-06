@@ -4,3 +4,8 @@ log
 src/lab_navigation/map
 src/lab_navigation/pcd
 src/lab_navigation/bag
+captures/
+validation/
+__pycache__/
+.pytest_cache/
+*.pyc
