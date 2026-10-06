@@ -140,6 +140,8 @@ bag書き出しのreceived_nsはbagの記録時刻です。
 シミュレーションではこの2つの時計は異なり、差をセンサ遅延として解釈しません。
 COLMAPに渡すのは `captures/sim_001/images/` です。
 詳しいSfM手順は [COLMAP_SFM.md](COLMAP_SFM.md) を参照してください。
+保存済みTFから画像ごとの位置・姿勢を抽出し、COLMAPへ登録する方法は
+[POSE_PRIORS.md](POSE_PRIORS.md) を参照してください。
 
 ## 検証
 

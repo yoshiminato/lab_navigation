@@ -10,6 +10,7 @@ setup(
         ('share/sfm_capture/config', glob('config/*.yaml')),
     ],
     install_requires=['setuptools'], zip_safe=True,
+    extras_require={'colmap': ['numpy', 'pycolmap>=4.2,<4.3']},
     maintainer='Workspace user', maintainer_email='user@example.com',
     description='Timestamped monocular image collection for COLMAP',
     license='Apache-2.0',
@@ -17,5 +18,7 @@ setup(
         'recorder = sfm_capture.recorder:main',
         'export_bag = sfm_capture.export_bag:main',
         'check_dataset = sfm_capture.check_dataset:main',
+        'export_poses = sfm_capture.export_poses:main',
+        'import_pose_priors = sfm_capture.import_pose_priors:main',
     ]},
 )

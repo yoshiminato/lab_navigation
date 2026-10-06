@@ -3,6 +3,8 @@
 確認日: **2026-09-23**。実行場所は画像を転送した**別のPC**を想定します。この文書は手順書であり、このワークスペースで建物の SfM が完了したという意味ではありません。
 
 収集方法は [SFM_CAPTURE](SFM_CAPTURE.md)、SfM 後の自己位置推定と Nav2 接続は [NAV2_VISUAL_LOCALIZATION.md](NAV2_VISUAL_LOCALIZATION.md) を参照してください。
+TFから撮影時刻の位置を取得し、COLMAP 4.2系の `pose_prior_mapper` で位置制約を使う手順は
+[POSE_PRIORS.md](POSE_PRIORS.md) を参照してください。以下の通常の `mapper` 手順とは別の選択肢です。
 
 ## 1. 今回作るものと保存形式
 
