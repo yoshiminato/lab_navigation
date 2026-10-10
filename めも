@@ -17,8 +17,6 @@ ros2 topic echo /cloud_in --once
 ros2 topic echo /velodyne_points --once
 ros2 run tf2_ros tf2_echo base_link velodyne
 
-
-
 ros2 topic echo /tf
 date +%s.%N
 ros2 run tf2_tools view_frames
@@ -36,18 +34,13 @@ ros2 node info <localizationノード名>
 
 ros2 run tf2_ros tf2_echo map base_link
 
-
-
-
 ------
-
 
 ros2 run tf2_ros tf2_monitor map odom
 ros2 topic hz /tf
 ros2 topic hz /velodyne_points
 
 Color Transformer: FlatColor
-
 
 ## 処理落ち？
 
@@ -57,17 +50,10 @@ htop
 
 ros2 topic echo /velodyne_points --once
 
-
-
-
 ros2 run tf2_ros tf2_echo map odom
 ros2 run tf2_ros tf2_echo odom base_link
 
-
-
 ------
-
-
 
 mkdir -p ~/nav_debug/system_info
 ros2 node list > ~/nav_debug/system_info/nodes.txt

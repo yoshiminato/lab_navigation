@@ -54,7 +54,7 @@ COLMAPとPyCOLMAPのDB形式が適合する環境を使ってください。
 以下ではBashの同じ端末で変数を設定します。出力先は新しい名前を指定してください。
 
 ```bash
-sfm_capture_dir="$PWD/captures/sim_002"
+sfm_capture_dir="$PWD/captures/1008"
 sfm_pose_dir="$sfm_capture_dir/poses_map_base"
 sfm_colmap_dir="$sfm_capture_dir/colmap_with_priors"
 
