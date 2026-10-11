@@ -54,9 +54,9 @@ COLMAPとPyCOLMAPのDB形式が適合する環境を使ってください。
 以下ではBashの同じ端末で変数を設定します。出力先は新しい名前を指定してください。
 
 ```bash
-sfm_capture_dir="$PWD/captures/1008"
+sfm_capture_dir="$PWD/captures/1007"
 sfm_pose_dir="$sfm_capture_dir/poses_map_base"
-sfm_colmap_dir="$sfm_capture_dir/colmap_with_priors"
+sfm_colmap_dir="$sfm_capture_dir"
 
 ros2 run sfm_capture export_poses \
   "$sfm_capture_dir" "$sfm_pose_dir" \
@@ -155,7 +155,9 @@ colmap feature_extractor \
 ```bash
 ros2 run sfm_capture import_pose_priors \
   "$sfm_pose_dir/poses.csv" "$sfm_colmap_dir/features.db" \
-  --output-database "$sfm_colmap_dir/database.db"
+  --output-database "$sfm_colmap_dir/database.db" \
+  --skip-missing
+  
 ```
 
 登録先には**新しいファイル名**が必要です。元の `features.db` は保持します。
