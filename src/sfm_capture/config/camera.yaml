@@ -20,7 +20,7 @@
     auto_white_balance: true
     white_balance: 4000
     autoexposure: false
-    exposure: 50
+    exposure: 20
     # Set the lens focus first. Disabled AF retains the current focus where supported.
     autofocus: false
     focus: -1
