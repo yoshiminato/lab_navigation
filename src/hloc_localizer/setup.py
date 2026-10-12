@@ -25,6 +25,8 @@ setup(
     entry_points={
     'console_scripts': [
         'hloc_tf_publisher = hloc_localizer.hloc_tf_publisher:main',
+        'hloc_localizer_node = hloc_localizer.hloc_localizer_node:main',
+        'image_file_publisher = hloc_localizer.image_file_publisher:main',
     ],
 },
 )
