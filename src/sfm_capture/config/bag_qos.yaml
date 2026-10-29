@@ -1,0 +1,7 @@
+# Static transforms may have been published before the capture launch starts.
+# Other topics use rosbag2's automatic publisher-QoS adaptation (including IMU).
+/tf_static:
+  history: keep_last
+  depth: 100
+  reliability: reliable
+  durability: transient_local

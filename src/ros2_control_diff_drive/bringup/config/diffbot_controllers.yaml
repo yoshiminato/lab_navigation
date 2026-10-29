@@ -19,9 +19,9 @@ diffbot_base_controller:
     #wheels_per_side: 1  # actually 2, but both are controlled by 1 signal
     wheel_radius: 0.135
 
-    wheel_separation_multiplier: 1.0
-    left_wheel_radius_multiplier: 1.0
-    right_wheel_radius_multiplier: 1.0
+    wheel_separation_multiplier: 1.05
+    left_wheel_radius_multiplier: 0.924
+    right_wheel_radius_multiplier: 0.924
 
     publish_rate: 50.0
     odom_frame_id: odom
@@ -29,6 +29,10 @@ diffbot_base_controller:
     pose_covariance_diagonal : [0.001, 0.001, 0.001, 0.001, 0.001, 0.01]
     twist_covariance_diagonal: [0.001, 0.001, 0.001, 0.001, 0.001, 0.01]
 
+<<<<<<< HEAD
+=======
+    position_feedback: true
+>>>>>>> feature/hloc-nav2-integration
     open_loop: false
     enable_odom_tf: true
 

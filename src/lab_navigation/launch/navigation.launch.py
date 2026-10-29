@@ -1,122 +1,147 @@
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess
-from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
-from launch.actions import IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+<<<<<<< HEAD
 import os
 from ament_index_python.packages import get_package_share_directory
 
+=======
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch_ros.substitutions import FindPackageShare
+>>>>>>> feature/hloc-nav2-integration
 
 
 def generate_launch_description():
-
-    # PCDファイルのパスを指定するためのコマンドを定義
+    # Paths retained from the currently working configuration.
     declare_pcd_file_path_cmd = DeclareLaunchArgument(
         'pcd_file_path',
-        default_value='/home/user/pcd/hallway.pcd'
+        default_value='/home/user/lab_navigation_ws/src/lab_navigation/pcd/hv_building_lab.pcd',
     )
-
-    # 地図のyamlファイルのパスを指定するためのコマンドを定義
     declare_map_yaml_file_path_cmd = DeclareLaunchArgument(
         'map_yaml_file_path',
-        default_value='/home/user/map/hallway/hallway.yaml'
+        default_value='/home/user/lab_navigation_ws/src/lab_navigation/map/hv_building_lab/hv_building_lab.yaml',
     )
-
-    # Nav2パラメータファイルのパスを指定するためのコマンドを定義
     declare_nav2_params_file_path_cmd = DeclareLaunchArgument(
         'nav2_params_file_path',
+<<<<<<< HEAD
         default_value='/home/user/lab_navigation_ws/src/lab_navigation/params/nav2_params.yaml'
+=======
+        default_value='/home/user/lab_navigation_ws/src/lab_navigation/params/nav2_params.yaml',
+>>>>>>> feature/hloc-nav2-integration
     )
-
-    # localizationパラメータファイルのパスを指定するためのコマンドを定義
     declare_localization_params_file_path_cmd = DeclareLaunchArgument(
         'localization_params_file_path',
+<<<<<<< HEAD
         default_value='/home/user/lab_navigation_ws/src/lab_navigation/params/localization.yaml'
+=======
+        default_value='/home/user/lab_navigation_ws/src/lab_navigation/params/localization.yaml',
+>>>>>>> feature/hloc-nav2-integration
     )
 
-    # # micro-ROSエージェントを起動するためのコマンドを定義
-    # micro_ros = ExecuteProcess(
-    #     cmd=[
-    #         'gnome-terminal', '--tab', '--title=micro_ros', '--',
-    #         'bash', '-c',
-    #         'ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyUSB0 -v6; exec bash'
-    #     ],
-    #     output='screen'
-    # )
-
-    # robot_state_publisherとjoint_state_publisherを起動するためのコマンドを定義
-    ros2_control = ExecuteProcess(
-        cmd=[
-            'gnome-terminal', '--tab', '--title=ros2_control_ws', '--',
-            'bash', '-c',
-            'ros2 launch ros2_control_diff_drive diffbot.launch.py; exec bash'
-        ],
-        output='screen'
+    # micro-ROS Agent and ros2_control are launched by diffbot.launch.py.
+    serial_port_arg = DeclareLaunchArgument('serial_port', default_value='/dev/ttyUSB0')
+    serial_baudrate_arg = DeclareLaunchArgument('serial_baudrate', default_value='921600')
+    start_agent_arg = DeclareLaunchArgument('start_micro_ros_agent', default_value='true')
+    
+    ros2_control = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            PathJoinSubstitution([
+                FindPackageShare('lab_navigation'), 'launch', 'diffbot_custom.launch.py'
+            ])
+        ),
+        launch_arguments={
+            'serial_port': LaunchConfiguration('serial_port'),
+            'serial_baudrate': LaunchConfiguration('serial_baudrate'),
+            'start_micro_ros_agent': LaunchConfiguration('start_micro_ros_agent'),
+        }.items(),
     )
 
-    # Velodyneドライバを起動するためのコマンドを定義
+    # カスタムvelodynelancherの起動
+    # velodyne_laserscan_nodeの起動を除外したもの
     velodyne = ExecuteProcess(
         cmd=[
-            'gnome-terminal', '--tab', '--title=velodyne', '--',
-            'bash', '-c',
-            'ros2 launch velodyne velodyne-all-nodes-VLP16-launch.py; exec bash'
+            'gnome-terminal',
+            '--tab',
+            '--title=velodyne',
+            '--',
+            'bash',
+            '-c',
+            'ros2 launch lab_navigation velodyne_points.launch.py; exec bash'
         ],
         output='screen'
     )
 
-    # lidar_localizationを起動するためのコマンドを定義
-    localization_params_file_path = LaunchConfiguration('localization_params_file_path')
+    # Source only the integrated workspace; do not source the old localization_ws.
+    # The parent shell must have already sourced ROS Humble + micro_ros_ws.
     lidar_localization = ExecuteProcess(
         cmd=[
             'gnome-terminal', '--tab', '--title=lidar_localization', '--',
+<<<<<<< HEAD
             'bash', '-c',
             [
                 'ros2 launch lidar_localization_ros2 lidar_localization.launch.py localization_param_dir:=',
                 localization_params_file_path,
                 '; exec bash'
             ]
+=======
+            'bash', '-c', [
+                'ros2 launch lidar_localization_ros2_custom lidar_localization.launch.py ',
+                'localization_param_dir:=',
+                LaunchConfiguration('localization_params_file_path'),
+                '; exec bash',
+            ],
+>>>>>>> feature/hloc-nav2-integration
         ],
-        output='screen'
+        output='screen',
     )
 
-    # 障害物検出ノードを起動するためのコマンドを定義
     obstacle_detection = ExecuteProcess(
         cmd=[
             'gnome-terminal', '--tab', '--title=obstacle_detection', '--',
             'bash', '-c',
-            'ros2 launch obstacle_cloud_to_scan obstacle_cloud_to_scan.launch.py; exec bash'
+            'ros2 launch obstacle_cloud_to_scan obstacle_cloud_to_scan.launch.py; exec bash',
         ],
-        output='screen'
+        output='screen',
     )
 
+<<<<<<< HEAD
     # topic_tools throttle を起動
+=======
+>>>>>>> feature/hloc-nav2-integration
     throttle = ExecuteProcess(
         cmd=[
             'ros2', 'run', 'topic_tools', 'throttle', 'messages',
-            '/cmd_vel', '60.0', '/cmd_vel_slow'
+            '/cmd_vel', '60.0', '/cmd_vel_slow',
         ],
-        output='screen'
+        output='screen',
     )
 
+<<<<<<< HEAD
     # map_serverを起動するためのコマンドを定義
     nav2_bringup_dir = get_package_share_directory('nav2_bringup')
     map_yaml_file_path = LaunchConfiguration('map_yaml_file_path')
     map_server = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(nav2_bringup_dir, 'launch', 'localization_launch.py')
+=======
+    # Resolves the copied, currently customized nav2_bringup from lab_navigation_ws.
+    map_server = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            PathJoinSubstitution([
+                FindPackageShare('nav2_bringup'), 'launch', 'localization_launch.py',
+            ])
+>>>>>>> feature/hloc-nav2-integration
         ),
         launch_arguments={
-            'map': map_yaml_file_path
-        }.items()
+            'map': LaunchConfiguration('map_yaml_file_path'),
+        }.items(),
     )
 
-    # Nav2を起動するためのコマンドを定義
-    nav2_params_file_path = LaunchConfiguration('nav2_params_file_path')
-    params_file_path = LaunchConfiguration('nav2_params_file_path')
+    # Only specify params_file once.
     nav2 = ExecuteProcess(
         cmd=[
             'gnome-terminal', '--tab', '--title=nav2', '--',
+<<<<<<< HEAD
             'bash', '-c',
             [
                 'ros2 launch nav2_bringup navigation_launch.py use_sim_time:=false params_file:=',
@@ -126,18 +151,25 @@ def generate_launch_description():
                 params_file_path,
                 '; exec bash'
             ]
+=======
+            'bash', '-c', [
+                'ros2 launch nav2_bringup navigation_launch.py ',
+                'use_sim_time:=false params_file:=',
+                LaunchConfiguration('nav2_params_file_path'),
+                ' log_level:=info; exec bash',
+            ],
+>>>>>>> feature/hloc-nav2-integration
         ],
-        output='screen'
+        output='screen',
     )
 
-    # Rvizを起動するためのコマンドを定義
     rviz = ExecuteProcess(
         cmd=[
             'gnome-terminal', '--tab', '--title=rviz', '--',
             'bash', '-c',
-            'ros2 launch nav2_bringup rviz_launch.py; exec bash'
+            'ros2 launch nav2_bringup rviz_launch.py; exec bash',
         ],
-        output='screen'
+        output='screen',
     )
 
     return LaunchDescription([
@@ -145,7 +177,9 @@ def generate_launch_description():
         declare_map_yaml_file_path_cmd,
         declare_nav2_params_file_path_cmd,
         declare_localization_params_file_path_cmd,
-        # micro_ros,
+        serial_port_arg,
+        serial_baudrate_arg,
+        start_agent_arg,
         ros2_control,
         velodyne,
         lidar_localization,

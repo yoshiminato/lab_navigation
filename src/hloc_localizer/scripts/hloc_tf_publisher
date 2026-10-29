@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+exec /home/user/lab_navigation_ws/.venv/bin/python3 \
+  -m hloc_localizer.hloc_tf_publisher "$@"
