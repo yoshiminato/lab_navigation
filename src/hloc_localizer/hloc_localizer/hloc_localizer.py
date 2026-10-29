@@ -984,18 +984,37 @@ class HlocLocalizerNode(Node):
             time.perf_counter()
         )
 
+        result = {
+            'success': False,
+            'reason': 'unhandled_localization_exception',
+            'num_matches': 0,
+            'num_inliers': 0,
+        }
+
         try:
-            self._process_image(msg, frame_number, total_start)
+            result = self._process_image(msg, frame_number, total_start)
+            if result['success']:
+                self._publish_pose(msg, result['cam_from_world'])
+                self.success_count += 1
         except Exception as error:
             self.get_logger().error(
                 f'Unhandled image localization error: {error}'
             )
-            self._publish_localization_status(
-                msg,
-                frame_number,
-                False,
-                'unhandled_localization_exception',
-            )
+            result = {
+                'success': False,
+                'reason': 'unhandled_localization_exception',
+                'num_matches': 0,
+                'num_inliers': 0,
+            }
+
+        self._publish_localization_status(
+            msg,
+            frame_number,
+            result['success'],
+            result['reason'],
+            num_matches=result['num_matches'],
+            num_inliers=result['num_inliers'],
+        )
 
     def _process_image(self, msg, frame_number, total_start):
 
@@ -1016,14 +1035,12 @@ class HlocLocalizerNode(Node):
                 f'{error}'
             )
 
-            self._publish_localization_status(
-                msg,
-                frame_number,
-                False,
-                'cv_bridge_error',
-            )
-
-            return
+            return {
+                'success': False,
+                'reason': 'cv_bridge_error',
+                'num_matches': 0,
+                'num_inliers': 0,
+            }
 
         height, width = (
             image_bgr.shape[:2]
@@ -1154,15 +1171,12 @@ class HlocLocalizerNode(Node):
                 'no 2D-3D correspondences'
             )
 
-            self._publish_localization_status(
-                msg,
-                frame_number,
-                False,
-                'no_2d_3d_correspondences',
-                num_matches=num_matches,
-            )
-
-            return
+            return {
+                'success': False,
+                'reason': 'no_2d_3d_correspondences',
+                'num_matches': num_matches,
+                'num_inliers': 0,
+            }
 
         # ----------------------------------------------------
         # PnP
@@ -1193,15 +1207,12 @@ class HlocLocalizerNode(Node):
                 f'{error}'
             )
 
-            self._publish_localization_status(
-                msg,
-                frame_number,
-                False,
-                'localization_exception',
-                num_matches=num_matches,
-            )
-
-            return
+            return {
+                'success': False,
+                'reason': 'localization_exception',
+                'num_matches': num_matches,
+                'num_inliers': 0,
+            }
 
         t_pnp = (
             time.perf_counter()
@@ -1234,26 +1245,8 @@ class HlocLocalizerNode(Node):
                 success = True
                 status_reason = 'success'
 
-                self.success_count += 1
-
-                self._publish_pose(
-                    msg,
-                    result[
-                        'cam_from_world'
-                    ],
-                )
-
             else:
                 status_reason = 'insufficient_inliers'
-
-        self._publish_localization_status(
-            msg,
-            frame_number,
-            success,
-            status_reason,
-            num_matches=num_matches,
-            num_inliers=num_inliers,
-        )
 
         total_time = (
             time.perf_counter()
@@ -1317,10 +1310,20 @@ class HlocLocalizerNode(Node):
             f'Avg(*)     : {average_time:.3f} s\n'
             f'Rate(*)    : {rate:.2f} Hz\n'
             f'Success    : '
-            f'{self.success_count}/'
+            f'{self.success_count + int(success)}/'
             f'{self.frame_count}\n'
             '========================================'
         )
+
+        outcome = {
+            'success': success,
+            'reason': status_reason,
+            'num_matches': num_matches,
+            'num_inliers': num_inliers,
+        }
+        if success:
+            outcome['cam_from_world'] = result['cam_from_world']
+        return outcome
 
     def _publish_localization_status(
         self,

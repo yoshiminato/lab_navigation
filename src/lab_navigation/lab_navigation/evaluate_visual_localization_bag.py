@@ -2,7 +2,7 @@
 
 import argparse
 import bisect
-from collections import Counter
+from collections import Counter, deque
 import csv
 import json
 import math
@@ -155,6 +155,36 @@ def compose_pose(first, second):
     return make_pose(position, orientation)
 
 
+def lookup_transform(transforms, parent_frame, child_frame):
+    """Compose a static TF path and return T_parent_child."""
+    parent_frame = parent_frame.lstrip('/')
+    child_frame = child_frame.lstrip('/')
+    if parent_frame == child_frame:
+        return make_pose((0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0))
+
+    graph = {}
+    for parent, child, parent_from_child in transforms:
+        graph.setdefault(parent, []).append((child, parent_from_child))
+        graph.setdefault(child, []).append((parent, inverse_pose(parent_from_child)))
+
+    identity = make_pose((0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0))
+    queue = deque([(parent_frame, identity)])
+    visited = {parent_frame}
+
+    while queue:
+        frame, parent_from_frame = queue.popleft()
+        for next_frame, frame_from_next in graph.get(frame, []):
+            if next_frame in visited:
+                continue
+            parent_from_next = compose_pose(parent_from_frame, frame_from_next)
+            if next_frame == child_frame:
+                return parent_from_next
+            visited.add(next_frame)
+            queue.append((next_frame, parent_from_next))
+
+    return None
+
+
 def align_hloc_pose(pose, alignment):
     position, orientation = pose
     scale = float(alignment['scale'])
@@ -263,7 +293,7 @@ def read_bag(bag_path, frames):
     lidar_samples = []
     hloc_poses = []
     statuses = []
-    base_camera_transform = None
+    static_transforms = []
 
     while reader.has_next():
         topic, serialized, _ = reader.read_next()
@@ -304,21 +334,26 @@ def read_bag(bag_path, frames):
             for transform in message.transforms:
                 parent = transform.header.frame_id.lstrip('/')
                 child = transform.child_frame_id.lstrip('/')
-                if (
-                    parent == frames['base'].lstrip('/')
-                    and child == frames['camera'].lstrip('/')
-                ):
-                    base_camera_transform = pose_from_transform(
-                        transform.transform
-                    )
+                if not parent or not child:
+                    continue
+                static_transforms.append((
+                    parent,
+                    child,
+                    pose_from_transform(transform.transform),
+                ))
 
     if not lidar_samples:
         raise ValueError('The bag contains no LiDAR poses on /pcl_pose')
     if not hloc_poses:
         raise ValueError('The bag contains no HLoc poses')
+    base_camera_transform = lookup_transform(
+        static_transforms,
+        frames['base'],
+        frames['camera'],
+    )
     if base_camera_transform is None:
         raise ValueError(
-            'Could not find base-to-camera transform in /tf_static: '
+            'Could not find a transform path in /tf_static from '
             f"{frames['base']} -> {frames['camera']}"
         )
 

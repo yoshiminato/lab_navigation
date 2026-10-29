@@ -52,7 +52,7 @@ points. Set `map_alignment.verified` to `true` and fill in the scale,
 translation, and quaternion. Do not estimate the alignment from the same
 evaluation trajectory, as that would reduce the measured error by construction.
 
-The analyzer reads the static transform from `base_link` to
+The analyzer composes the static TF chain from `base_link` to
 `camera_optical_frame` in `/tf_static`, converts each HLoc camera pose to a
 `base_link` pose, then interpolates the LiDAR trajectory to the HLoc image
 timestamp. It only pairs poses bracketed by LiDAR samples no more than the
