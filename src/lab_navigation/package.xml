@@ -8,8 +8,22 @@
   <license>TODO: License declaration</license>
 
   <exec_depend>ros2_control_diff_drive</exec_depend>
+  <exec_depend>lidar_localization_ros2_custom</exec_depend>
+  <exec_depend>nav2_bringup</exec_depend>
+  <exec_depend>image_tools</exec_depend>
+  <exec_depend>obstacle_cloud_to_scan</exec_depend>
+  <exec_depend>topic_tools</exec_depend>
+  <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>sfm_capture</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>rosbag2_py</exec_depend>
+  <exec_depend>rosidl_runtime_py</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>tf2_msgs</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

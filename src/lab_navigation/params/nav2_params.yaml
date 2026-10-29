@@ -265,11 +265,7 @@ global_costmap:
       robot_base_frame: base_link
       use_sim_time: false
       # robot_radius: 0.22
-<<<<<<< HEAD
-      footprint: "[ [0.4, 0.3], [0.4, -0.3], [-0.4, -0.3], [-0.4, 0.3] ]"
-=======
       footprint: "[ [0.35, 0.3], [0.35, -0.3], [-0.35, -0.3], [-0.35, 0.3] ]"
->>>>>>> feature/hloc-nav2-integration
       resolution: 0.05
       track_unknown_space: true
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]

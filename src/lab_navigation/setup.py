@@ -81,6 +81,8 @@ setup(
     entry_points={
         'console_scripts': [
             'odom_baselink_tf = odom_baselink_tf_publisher.publisher:main',
+            'evaluate_visual_localization_bag = '
+            'lab_navigation.evaluate_visual_localization_bag:main',
         ],
     },
 )

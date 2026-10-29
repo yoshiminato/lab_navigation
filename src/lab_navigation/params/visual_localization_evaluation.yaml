@@ -1,0 +1,16 @@
+# Set verified=true only after confirming that the HLoc SfM model has been
+# aligned to the LiDAR map using independent control points.
+map_alignment:
+  verified: false
+  scale: 1.0
+  translation_m: [0.0, 0.0, 0.0]
+  rotation_xyzw: [0.0, 0.0, 0.0, 1.0]
+
+frames:
+  lidar_map: map
+  hloc_map: map
+  base: base_link
+  camera: camera_optical_frame
+
+synchronization:
+  max_lidar_bracket_gap_sec: 0.25

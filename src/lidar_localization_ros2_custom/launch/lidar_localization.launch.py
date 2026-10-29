@@ -13,6 +13,7 @@ from launch_ros.actions import LifecycleNode
 from launch_ros.actions import Node
 
 from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 
 import lifecycle_msgs.msg
@@ -24,26 +25,30 @@ def generate_launch_description():
     ld = launch.LaunchDescription()
     
     use_sim_time = LaunchConfiguration('use_sim_time')
+    publish_lidar_tf = LaunchConfiguration('publish_lidar_tf')
 
     declare_use_sim_time = DeclareLaunchArgument(
         'use_sim_time',
         default_value='false',
         description='Use simulation clock if true'
     )
+
+    declare_publish_lidar_tf = DeclareLaunchArgument(
+        'publish_lidar_tf',
+        default_value='false',
+        description=(
+            'Publish the fallback base_link-to-velodyne transform only when '
+            'robot_state_publisher is not publishing it'
+        ),
+    )
     
     lidar_tf = launch_ros.actions.Node(
         name='lidar_tf',
         package='tf2_ros',
         executable='static_transform_publisher',
-        arguments=['0','0','0.165','0','0','0','1','base_link','velodyne']
-        )
-
-    imu_tf = launch_ros.actions.Node(
-        name='imu_tf',
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        arguments=['0','0','0','0','0','0','1','base_link','imu_link']
-        )
+        arguments=['0','0','0.165','0','0','0','1','base_link','velodyne'],
+        condition=IfCondition(publish_lidar_tf),
+    )
 
     localization_param_dir = launch.substitutions.LaunchConfiguration(
         'localization_param_dir',
@@ -101,6 +106,7 @@ def generate_launch_description():
     )
 
     ld.add_action(declare_use_sim_time)
+    ld.add_action(declare_publish_lidar_tf)
     ld.add_action(from_unconfigured_to_inactive)
     ld.add_action(from_inactive_to_active)
 

@@ -5,6 +5,7 @@
 """
 
 import math
+import json
 import time
 from pathlib import Path
 
@@ -27,6 +28,7 @@ from rclpy.qos import (
 from cv_bridge import CvBridge
 from sensor_msgs.msg import Image
 from geometry_msgs.msg import PoseStamped
+from std_msgs.msg import String
 
 from hloc import extract_features
 from hloc import extractors
@@ -577,6 +579,13 @@ class HlocLocalizerNode(Node):
             ),
         )
 
+        status_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=100,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.VOLATILE,
+        )
+
         self.subscription = (
             self.create_subscription(
                 Image,
@@ -591,6 +600,14 @@ class HlocLocalizerNode(Node):
                 PoseStamped,
                 '/hloc/camera_pose',
                 pose_qos,
+            )
+        )
+
+        self.status_pub = (
+            self.create_publisher(
+                String,
+                '/hloc/localization_status',
+                status_qos,
             )
         )
 
@@ -960,14 +977,27 @@ class HlocLocalizerNode(Node):
     ):
 
         self.frame_count += 1
-
         frame_number = (
             self.frame_count
         )
-
         total_start = (
             time.perf_counter()
         )
+
+        try:
+            self._process_image(msg, frame_number, total_start)
+        except Exception as error:
+            self.get_logger().error(
+                f'Unhandled image localization error: {error}'
+            )
+            self._publish_localization_status(
+                msg,
+                frame_number,
+                False,
+                'unhandled_localization_exception',
+            )
+
+    def _process_image(self, msg, frame_number, total_start):
 
         try:
 
@@ -984,6 +1014,13 @@ class HlocLocalizerNode(Node):
             self.get_logger().error(
                 'cv_bridge error: '
                 f'{error}'
+            )
+
+            self._publish_localization_status(
+                msg,
+                frame_number,
+                False,
+                'cv_bridge_error',
             )
 
             return
@@ -1117,6 +1154,14 @@ class HlocLocalizerNode(Node):
                 'no 2D-3D correspondences'
             )
 
+            self._publish_localization_status(
+                msg,
+                frame_number,
+                False,
+                'no_2d_3d_correspondences',
+                num_matches=num_matches,
+            )
+
             return
 
         # ----------------------------------------------------
@@ -1148,6 +1193,14 @@ class HlocLocalizerNode(Node):
                 f'{error}'
             )
 
+            self._publish_localization_status(
+                msg,
+                frame_number,
+                False,
+                'localization_exception',
+                num_matches=num_matches,
+            )
+
             return
 
         t_pnp = (
@@ -1157,6 +1210,7 @@ class HlocLocalizerNode(Node):
 
         num_inliers = 0
         success = False
+        status_reason = 'localization_failed'
 
         if result is not None:
 
@@ -1178,6 +1232,7 @@ class HlocLocalizerNode(Node):
             ):
 
                 success = True
+                status_reason = 'success'
 
                 self.success_count += 1
 
@@ -1187,6 +1242,18 @@ class HlocLocalizerNode(Node):
                         'cam_from_world'
                     ],
                 )
+
+            else:
+                status_reason = 'insufficient_inliers'
+
+        self._publish_localization_status(
+            msg,
+            frame_number,
+            success,
+            status_reason,
+            num_matches=num_matches,
+            num_inliers=num_inliers,
+        )
 
         total_time = (
             time.perf_counter()
@@ -1254,6 +1321,32 @@ class HlocLocalizerNode(Node):
             f'{self.frame_count}\n'
             '========================================'
         )
+
+    def _publish_localization_status(
+        self,
+        image_msg,
+        frame_number,
+        success,
+        reason,
+        num_matches=0,
+        num_inliers=0,
+    ):
+        """Publish a timestamped machine-readable result for each processed image."""
+
+        status = String()
+        status.data = json.dumps(
+            {
+                'stamp_sec': int(image_msg.header.stamp.sec),
+                'stamp_nanosec': int(image_msg.header.stamp.nanosec),
+                'frame_number': int(frame_number),
+                'success': bool(success),
+                'reason': reason,
+                'num_matches': int(num_matches),
+                'num_inliers': int(num_inliers),
+            },
+            separators=(',', ':'),
+        )
+        self.status_pub.publish(status)
 
     # ========================================================
     # Shutdown

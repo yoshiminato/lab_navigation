@@ -3,6 +3,7 @@
 このREADMEでは、現在の構成でHLocによる画像自己位置推定を行い、
 
 - `/hloc/camera_pose`
+- `/hloc/localization_status` (処理した画像ごとの成功・失敗。評価用)
 - `map -> odom`
 - `map -> base_link`
 
