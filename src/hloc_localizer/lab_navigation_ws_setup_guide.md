@@ -623,7 +623,7 @@ source install/setup.bash
 
 ## 22. robot_state_publisher
 
-`diffbot_custom.launch.py` では既に `robot_state_publisher` を起動しているため、別途追加不要。
+`diffbot_control.launch.py` では既に `robot_state_publisher` を起動しているため、別途追加不要。
 
 URDF の TF 構造:
 
@@ -659,7 +659,7 @@ HLoc ノードは TF から `base_link -> camera_optical_frame` を取得する�
 source /opt/ros/humble/setup.bash
 source ~/lab_navigation_ws/install/setup.bash
 
-ros2 launch lab_navigation diffbot_custom.launch.py \
+ros2 launch lab_navigation diffbot_control.launch.py \
   use_mock_hardware:=true \
   start_micro_ros_agent:=false \
   gui:=false

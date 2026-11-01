@@ -79,7 +79,7 @@ def generate_launch_description():
             PathJoinSubstitution([
                 FindPackageShare('lab_navigation'),
                 'launch',
-                'diffbot_custom.launch.py',
+                'diffbot_control.launch.py',
             ])
         ),
         launch_arguments={

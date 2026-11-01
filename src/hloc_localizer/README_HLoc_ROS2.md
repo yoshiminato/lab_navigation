@@ -107,7 +107,7 @@ base_link -> camera_optical_frame
 source /opt/ros/humble/setup.bash
 source ~/lab_navigation_ws/install/setup.bash
 
-ros2 launch lab_navigation diffbot_custom.launch.py
+ros2 launch lab_navigation diffbot_control.launch.py
 ```
 
 テスト用のmock hardwareを使用する場合は、現在のlaunch設定に応じてmock hardwareで起動します。
