@@ -71,5 +71,13 @@ The summary includes HLoc's processed-frame success rate, the number of poses
 that could be matched to the LiDAR trajectory, and mean, RMSE, median, 95th
 percentile, and maximum errors for XY position, 3D position, and yaw.
 
+If status messages show that every processed image failed, the analyzer still
+reports the success rate and failure reasons with pose-error metrics set to
+`null`. In this case, LiDAR poses, camera TF, and verified map alignment are
+not needed. For successful statuses, their image timestamps must match the
+timestamps of the recorded HLoc camera poses; a mismatch stops analysis and
+indicates inconsistent or incomplete recording. If the bag has no HLoc status
+messages, analysis stops because the success rate cannot be determined.
+
 LiDAR Localization is a reference estimate here, not ground truth. Its
 reported covariance is not used by this analysis.

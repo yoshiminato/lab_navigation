@@ -229,16 +229,6 @@ def read_config(config_path):
         config = yaml.safe_load(stream)
 
     alignment = config['map_alignment']
-    if not alignment.get('verified', False):
-        raise ValueError(
-            'Map alignment is not marked verified. Confirm the fixed '
-            'SfM-to-LiDAR map transform using independent control points, '
-            'then update map_alignment in the evaluation YAML.'
-        )
-
-    if float(alignment['scale']) <= 0.0:
-        raise ValueError('map_alignment.scale must be positive')
-
     frames = config['frames']
     sync_gap = float(
         config['synchronization']['max_lidar_bracket_gap_sec']
@@ -269,16 +259,21 @@ def read_bag(bag_path, frames):
         for topic in reader.get_all_topics_and_types()
     }
 
-    required_types = {
+    expected_types = {
         '/pcl_pose': 'geometry_msgs/msg/PoseWithCovarianceStamped',
         '/hloc/camera_pose': 'geometry_msgs/msg/PoseStamped',
         '/hloc/localization_status': 'std_msgs/msg/String',
         '/tf_static': 'tf2_msgs/msg/TFMessage',
     }
-    for topic, expected_type in required_types.items():
+    required_topics = {'/hloc/localization_status'}
+    for topic, expected_type in expected_types.items():
         actual_type = topic_types.get(topic)
         if actual_type is None:
-            raise ValueError(f'Required topic {topic} is missing from the bag')
+            if topic in required_topics:
+                raise ValueError(
+                    f'Required topic {topic} is missing from the bag'
+                )
+            continue
         if actual_type != expected_type:
             raise ValueError(
                 f'{topic} has type {actual_type}; expected {expected_type}'
@@ -287,7 +282,7 @@ def read_bag(bag_path, frames):
     message_classes = {
         topic: get_message(message_type)
         for topic, message_type in topic_types.items()
-        if topic in required_types
+        if topic in expected_types
     }
 
     lidar_samples = []
@@ -297,7 +292,7 @@ def read_bag(bag_path, frames):
 
     while reader.has_next():
         topic, serialized, _ = reader.read_next()
-        if topic not in required_types:
+        if topic not in message_classes:
             continue
 
         message = deserialize_message(serialized, message_classes[topic])
@@ -342,20 +337,26 @@ def read_bag(bag_path, frames):
                     pose_from_transform(transform.transform),
                 ))
 
-    if not lidar_samples:
-        raise ValueError('The bag contains no LiDAR poses on /pcl_pose')
-    if not hloc_poses:
-        raise ValueError('The bag contains no HLoc poses')
-    base_camera_transform = lookup_transform(
-        static_transforms,
-        frames['base'],
-        frames['camera'],
-    )
-    if base_camera_transform is None:
+    if not statuses:
         raise ValueError(
-            'Could not find a transform path in /tf_static from '
-            f"{frames['base']} -> {frames['camera']}"
+            'The bag contains no HLoc localization status messages; '
+            'the HLoc success rate cannot be calculated'
         )
+
+    base_camera_transform = None
+    if hloc_poses:
+        if not lidar_samples:
+            raise ValueError('The bag contains no LiDAR poses on /pcl_pose')
+        base_camera_transform = lookup_transform(
+            static_transforms,
+            frames['base'],
+            frames['camera'],
+        )
+        if base_camera_transform is None:
+            raise ValueError(
+                'Could not find a transform path in /tf_static from '
+                f"{frames['base']} -> {frames['camera']}"
+            )
 
     lidar_samples.sort(key=lambda item: item[0])
     hloc_poses.sort(key=lambda item: item[0])
@@ -380,13 +381,73 @@ def summarize(values):
     }
 
 
+def validate_status_pose_timestamps(statuses, hloc_poses):
+    successful_status_stamps = Counter()
+    for status in statuses:
+        if not isinstance(status, dict):
+            raise ValueError(
+                'Each /hloc/localization_status message must contain a JSON object'
+            )
+
+        success = status.get('success')
+        if not isinstance(success, bool):
+            raise ValueError(
+                'Each HLoc status must contain a boolean "success" field'
+            )
+        if not success:
+            continue
+
+        try:
+            stamp_sec = int(status['stamp_sec'])
+            stamp_nanosec = int(status['stamp_nanosec'])
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError(
+                'Successful HLoc status is missing a valid image timestamp'
+            ) from error
+
+        if not 0 <= stamp_nanosec < 1_000_000_000:
+            raise ValueError(
+                'Successful HLoc status has an invalid nanosecond timestamp'
+            )
+        successful_status_stamps[
+            stamp_sec * 1_000_000_000 + stamp_nanosec
+        ] += 1
+
+    pose_stamps = Counter(stamp_ns for stamp_ns, _ in hloc_poses)
+    missing_poses = successful_status_stamps - pose_stamps
+    poses_without_success = pose_stamps - successful_status_stamps
+    if missing_poses or poses_without_success:
+        raise ValueError(
+            'HLoc status/pose timestamp mismatch: '
+            f'{sum(missing_poses.values())} successful status timestamp(s) '
+            'have no matching camera pose; '
+            f'{sum(poses_without_success.values())} camera pose timestamp(s) '
+            'have no matching successful status'
+        )
+
+    return sum(successful_status_stamps.values())
+
+
 def analyze(bag_path, output_dir, config_path):
     _, alignment, frames, max_gap_sec = read_config(config_path)
     lidar_samples, hloc_poses, statuses, base_camera = read_bag(
         bag_path, frames
     )
+    successful = validate_status_pose_timestamps(statuses, hloc_poses)
 
-    base_from_camera = inverse_pose(base_camera)
+    if hloc_poses:
+        if not alignment.get('verified', False):
+            raise ValueError(
+                'Map alignment is not marked verified. Confirm the fixed '
+                'SfM-to-LiDAR map transform using independent control points, '
+                'then update map_alignment in the evaluation YAML.'
+            )
+        if float(alignment['scale']) <= 0.0:
+            raise ValueError('map_alignment.scale must be positive')
+        base_from_camera = inverse_pose(base_camera)
+    else:
+        base_from_camera = None
+
     max_gap_ns = int(max_gap_sec * 1_000_000_000)
     output_dir.mkdir(parents=True, exist_ok=True)
     csv_path = output_dir / 'pose_errors.csv'
@@ -444,7 +505,6 @@ def analyze(bag_path, output_dir, config_path):
         writer.writerows(rows)
 
     processed = len(statuses)
-    successful = sum(1 for status in statuses if status.get('success'))
     failed = processed - successful
     failure_reasons = Counter(
         status.get('reason', 'unspecified')
