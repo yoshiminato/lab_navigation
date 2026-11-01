@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 // Copyright 2021 ros2_control Development Team
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,7 +11,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
->>>>>>> feature/hloc-nav2-integration
 #ifndef ROS2_CONTROL_DIFF_DRIVE__DIFFBOT_SYSTEM_HPP_
 #define ROS2_CONTROL_DIFF_DRIVE__DIFFBOT_SYSTEM_HPP_
 
@@ -28,50 +25,9 @@
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "std_msgs/msg/float64_multi_array.hpp"
-<<<<<<< HEAD
-#include "std_msgs/msg/float32.hpp"
-#include <libserial/SerialPort.h>
 
 namespace ros2_control_diff_drive
 {
-
-static constexpr uint8_t HEADER1 = 0xAA;
-static constexpr uint8_t HEADER2 = 0x55;
-
-enum class ReceiveState {
-  WAIT_FOR_HEADER1,
-  WAIT_FOR_HEADER2,
-  RECEIVE_DATA
-};
-
-#pragma pack(push, 1) // パケット構造を1バイト単位でパック
-
-struct CommandPacket {
-  uint8_t header1;
-  uint8_t header2;
-  float left_velocity_cmd = 0.0f;
-  float right_velocity_cmd = 0.0f;
-  uint8_t checksum = 0; // 簡単なエラーチェック用
-} __attribute__((packed));
-
-struct StatusPacket {
-  uint8_t header1;
-  uint8_t header2;
-  float left_position;
-  float left_velocity;
-  float right_position;
-  float right_velocity;
-  float battery_voltage;
-  uint8_t checksum = 0; // 簡単なエラーチェック用
-} __attribute__((packed));
-
-#pragma pack(pop)
-
-=======
-
-namespace ros2_control_diff_drive
-{
->>>>>>> feature/hloc-nav2-integration
 class DiffBotSystemHardware : public hardware_interface::SystemInterface
 {
 public:
@@ -92,33 +48,6 @@ public:
 private:
   using Clock = std::chrono::steady_clock;
   void joint_state_callback(const sensor_msgs::msg::JointState::SharedPtr msg);
-<<<<<<< HEAD
-
-  // チェックサム計算ヘルパー
-  uint8_t calculate_checksum(const uint8_t* data, size_t len);
-
-  bool receive_packet(StatusPacket* packet);
-
-  // サブスクライバーとパブリッシャー
-  rclcpp::Node::SharedPtr node_;
-  rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr battery_pub_;
-  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
-  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr velocity_pub_;
-  rclcpp::TimerBase::SharedPtr timer_;
-
-  // 受信状態変数
-  ReceiveState receive_state_ = ReceiveState::WAIT_FOR_HEADER1;
-  std::vector<uint8_t> rx_buffer_;
-  StatusPacket rx_data_;
-
-  // Humbleでの内部データ保持用配列（rad, rad/s）
-  std::vector<double> hw_commands_;
-  std::vector<double> hw_positions_;
-  std::vector<double> hw_velocities_;
-
-  LibSerial::SerialPort serial_port_;
-  std::string device_name_ = "/dev/ttyUSB0"; 
-=======
   void publish_command();
   void stop_motion();
   void stop_executor();
@@ -146,7 +75,6 @@ private:
   std::string command_topic_{"/mcu/wheel_commands"};
   std::string state_topic_{"/mcu/wheel_states"};
   std::vector<double> hw_commands_, hw_positions_, hw_velocities_;
->>>>>>> feature/hloc-nav2-integration
 };
 }  // namespace ros2_control_diff_drive
 #endif

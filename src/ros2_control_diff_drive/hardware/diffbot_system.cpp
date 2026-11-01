@@ -44,17 +44,6 @@ CallbackReturn DiffBotSystemHardware::on_init(const hardware_interface::Hardware
       return CallbackReturn::ERROR;
     }
   }
-<<<<<<< HEAD
-
-  rx_buffer_.resize(sizeof(StatusPacket));
-  rx_data_ = {};
-
-  // バッテリー残量用のノードとパブリッシャーを初期化
-  node_ = rclcpp::Node::make_shared("diffbot_hw_node");
-  battery_pub_ = node_->create_publisher<std_msgs::msg::Float32>("battery_level", 10);
-
-  return hardware_interface::CallbackReturn::SUCCESS;
-=======
   try {
     auto number = [this](const std::string & key, double & value) {
         const auto it = info_.hardware_parameters.find(key);
@@ -78,7 +67,6 @@ CallbackReturn DiffBotSystemHardware::on_init(const hardware_interface::Hardware
   hw_velocities_.assign(2, 0.0);
   hw_commands_.assign(2, 0.0);
   return CallbackReturn::SUCCESS;
->>>>>>> feature/hloc-nav2-integration
 }
 
 std::vector<hardware_interface::StateInterface> DiffBotSystemHardware::export_state_interfaces()
@@ -175,142 +163,16 @@ void DiffBotSystemHardware::stop_motion()
     active_ = false;
     commands_.fill(0.0);
   }
-<<<<<<< HEAD
-
-  RCLCPP_INFO(rclcpp::get_logger("DiffBotSystemHardware"), "Successfully activated!");
-  return hardware_interface::CallbackReturn::SUCCESS;
-}
-
-
-// ハードウェアのディアクティベート処理
-hardware_interface::CallbackReturn DiffBotSystemHardware::on_deactivate(
-  const rclcpp_lifecycle::State & /*previous_state*/)
-{
-  RCLCPP_INFO(rclcpp::get_logger("DiffBotSystemHardware"), "Successfully deactivated!");
-  return hardware_interface::CallbackReturn::SUCCESS;
-}
-
-
-// ハードウェアから現在の状態（エンコーダ値など）を読み取る
-hardware_interface::return_type DiffBotSystemHardware::read(
-  const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
-{
-  try{
-    if (receive_packet(&rx_data_)) {
-      if (hw_positions_.size() >= 2) {
-        hw_positions_[0] = rx_data_.left_position;
-        hw_velocities_[0] = rx_data_.left_velocity;
-        hw_positions_[1] = rx_data_.right_position;
-        hw_velocities_[1] = rx_data_.right_velocity;
-      }
-      
-      // バッテリー残量をパブリッシュ
-      if (battery_pub_) {
-        std_msgs::msg::Float32 battery_msg;
-        battery_msg.data = rx_data_.battery_voltage;
-        battery_pub_->publish(battery_msg);
-      }
-=======
   // The MCU watchdog is the fallback if this last zero command cannot be delivered.
   if (velocity_pub_ && rclcpp::ok()) {
     try {publish_command();} catch (const std::exception & e) {
       RCLCPP_WARN(node_->get_logger(), "Unable to publish final stop: %s", e.what());
->>>>>>> feature/hloc-nav2-integration
     }
-  } catch (...) {
-    return hardware_interface::return_type::ERROR;
   }
 }
 
 void DiffBotSystemHardware::stop_executor()
 {
-<<<<<<< HEAD
-  CommandPacket tx_data;
-  tx_data.header1 = HEADER1;
-  tx_data.header2 = HEADER2;
-
-  // コマンド値を構造体に格納
-  if (hw_commands_.size() >= 2) {
-    tx_data.left_velocity_cmd = hw_commands_[0];
-    tx_data.right_velocity_cmd = hw_commands_[1];
-  }
-
-  size_t  len = sizeof(CommandPacket) - 1;
-  uint8_t  *p = reinterpret_cast<uint8_t*>(&tx_data);
-  uint8_t  cs = calculate_checksum(p, len);
-
-  tx_data.checksum = cs;
-
-  // シリアル通信で送信
-  const uint8_t* ptr = reinterpret_cast<const uint8_t*>(&tx_data);
-  std::vector<uint8_t> tx_buffer(ptr, ptr + sizeof(tx_data));
-  
-  try {
-    serial_port_.Write(tx_buffer);
-    serial_port_.DrainWriteBuffer();
-  } catch (...) {
-    return hardware_interface::return_type::ERROR;
-  }
-  return hardware_interface::return_type::OK;
-}
-
-bool DiffBotSystemHardware::receive_packet(StatusPacket* packet) {
-  
-  static size_t rx_index = 0;
-
-  while(serial_port_.IsDataAvailable()) {
-    uint8_t byte;
-    
-    serial_port_.ReadByte(byte);
-  
-    switch (receive_state_)
-    {
-      case ReceiveState::WAIT_FOR_HEADER1:
-        if (byte == HEADER1) receive_state_ = ReceiveState::WAIT_FOR_HEADER2;
-        break;
-      
-      case ReceiveState::WAIT_FOR_HEADER2:
-        if (byte == HEADER2) {
-          receive_state_ = ReceiveState::RECEIVE_DATA;
-          rx_index = 0;
-          rx_buffer_[rx_index++] = HEADER1;
-          rx_buffer_[rx_index++] = HEADER2;
-        } else {
-          receive_state_ = ReceiveState::WAIT_FOR_HEADER1;
-        }
-        break;
-
-      case ReceiveState::RECEIVE_DATA:
-        rx_buffer_[rx_index++] = byte;
-        if(rx_index < sizeof(StatusPacket)) break;
-        
-        size_t   len = sizeof(StatusPacket) - 1;
-        uint8_t  cs  = calculate_checksum(rx_buffer_.data(), len);
-
-        if (byte != cs) {
-          receive_state_ = ReceiveState::WAIT_FOR_HEADER1;
-          break;
-        }
-
-        std::memcpy(packet, rx_buffer_.data(), sizeof(StatusPacket));
-        receive_state_ = ReceiveState::WAIT_FOR_HEADER1;
-        return true;
-
-        break;
-      }
-  }
-  return false;
-}
-
-uint8_t DiffBotSystemHardware::calculate_checksum(const uint8_t* data, size_t len) {
-  uint8_t cs = 0;
-  for (size_t i = 0; i < len; i++) {
-    cs ^= data[i];
-  }
-  return cs;
-}
-
-=======
   stop_motion();
   running_ = false;
   if (executor_) {executor_->cancel();}
@@ -330,7 +192,6 @@ CallbackReturn DiffBotSystemHardware::on_shutdown(const rclcpp_lifecycle::State 
 {stop_executor(); return CallbackReturn::SUCCESS;}
 CallbackReturn DiffBotSystemHardware::on_error(const rclcpp_lifecycle::State &)
 {stop_executor(); return CallbackReturn::SUCCESS;}
->>>>>>> feature/hloc-nav2-integration
 
 void DiffBotSystemHardware::joint_state_callback(const sensor_msgs::msg::JointState::SharedPtr msg)
 {
