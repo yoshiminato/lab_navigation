@@ -47,11 +47,6 @@ data_files = [
     ),
 
     (
-        os.path.join('share', package_name, 'params'),
-        glob('params/*.yaml')
-    ),
-
-    (
         os.path.join('share', package_name, 'world'),
         glob('world/*.sdf')
     ),
@@ -61,6 +56,7 @@ data_files = [
 # models以下をサブディレクトリ構造を保ったまま追加
 data_files += package_files('map')
 data_files += package_files('models')
+data_files += package_files('params')
 
 setup(
     name=package_name,
