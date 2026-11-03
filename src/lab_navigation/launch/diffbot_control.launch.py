@@ -23,12 +23,18 @@ from launch.substitutions import (
     PathJoinSubstitution,
     PythonExpression,
 )
+
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 from launch_ros.parameter_descriptions import ParameterValue
 
+
 def generate_launch_description():
-    # Declare arguments
+
+    # ============================================================
+    # Launch arguments
+    # ============================================================
+
     declared_arguments = []
 
     declared_arguments.append(
@@ -47,38 +53,104 @@ def generate_launch_description():
         )
     )
 
-    declared_arguments.extend(
-        [
-            DeclareLaunchArgument(
-                "start_micro_ros_agent",
-                default_value="true",
-            ),
-            DeclareLaunchArgument(
-                "serial_port",
-                default_value="/dev/ttyUSB0",
-            ),
-            DeclareLaunchArgument(
-                "serial_baudrate",
-                default_value="921600",
-            ),
-        ]
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "use_sim_time",
+            default_value="false",
+            description="Use simulation time from /clock.",
+        )
     )
 
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "start_micro_ros_agent",
+            default_value="true",
+            description="Start micro-ROS agent.",
+        )
+    )
 
-    # Initialize arguments
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "serial_port",
+            default_value="/dev/ttyUSB0",
+            description="Serial port used by micro-ROS agent.",
+        )
+    )
+
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "serial_baudrate",
+            default_value="921600",
+            description="Serial baudrate used by micro-ROS agent.",
+        )
+    )
+
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "robot_xacro",
+            default_value=PathJoinSubstitution(
+                [
+                    FindPackageShare("lab_navigation"),
+                    "urdf",
+                    "diffbot_real.urdf.xacro",
+                ]
+            ),
+            description="Robot Xacro used by ros2_control and robot_state_publisher.",
+        )
+    )
+
+    # ============================================================
+    # Initialize launch configurations
+    # ============================================================
+
     gui = LaunchConfiguration("gui")
-    use_mock_hardware = LaunchConfiguration("use_mock_hardware")
 
-    # Only the Agent opens the serial port. Mock hardware needs no Agent.
+    use_mock_hardware = LaunchConfiguration(
+        "use_mock_hardware"
+    )
+
+    use_sim_time = LaunchConfiguration(
+        "use_sim_time"
+    )
+
+    start_micro_ros_agent = LaunchConfiguration(
+        "start_micro_ros_agent"
+    )
+
+    serial_port = LaunchConfiguration(
+        "serial_port"
+    )
+
+    serial_baudrate = LaunchConfiguration(
+        "serial_baudrate"
+    )
+
+    robot_xacro = LaunchConfiguration(
+        "robot_xacro"
+    )
+
+    # ============================================================
+    # micro-ROS Agent
+    #
+    # 実機:
+    #   start_micro_ros_agent:=true
+    #
+    # Isaac Sim:
+    #   start_micro_ros_agent:=false
+    #
+    # mock hardware:
+    #   Agent不要
+    # ============================================================
+
     micro_ros_agent = Node(
         package="micro_ros_agent",
         executable="micro_ros_agent",
         arguments=[
             "serial",
             "--dev",
-            LaunchConfiguration("serial_port"),
+            serial_port,
             "-b",
-            LaunchConfiguration("serial_baudrate"),
+            serial_baudrate,
         ],
         output="screen",
         respawn=True,
@@ -87,7 +159,7 @@ def generate_launch_description():
             PythonExpression(
                 [
                     "'",
-                    LaunchConfiguration("start_micro_ros_agent"),
+                    start_micro_ros_agent,
                     "'.lower() == 'true' and '",
                     use_mock_hardware,
                     "'.lower() != 'true'",
@@ -96,71 +168,132 @@ def generate_launch_description():
         ),
     )
 
-    # Get URDF via xacro
+    # ============================================================
+    # Robot Description
+    # ============================================================
+
     robot_description_content = Command(
         [
             PathJoinSubstitution([FindExecutable(name="xacro")]),
             " ",
-            PathJoinSubstitution([
-                FindPackageShare("lab_navigation"),
-                "urdf",
-                "diffbot_real.urdf.xacro",
-            ]),
+            robot_xacro,
             " ",
             "use_mock_hardware:=",
             use_mock_hardware,
         ]
     )
+
     robot_description = {
         "robot_description": ParameterValue(
-            robot_description_content, 
-            value_type=str
+            robot_description_content,
+            value_type=str,
         )
     }
 
+    # ============================================================
+    # ros2_control controller config
+    # ============================================================
+
     robot_controllers = PathJoinSubstitution(
         [
-            FindPackageShare("ros2_control_diff_drive"),
+            FindPackageShare(
+                "ros2_control_diff_drive"
+            ),
             "config",
             "diffbot_controllers.yaml",
         ]
     )
 
+    # ============================================================
+    # RViz config
+    # ============================================================
+
     rviz_config_file = PathJoinSubstitution(
         [
-            FindPackageShare("ros2_control_diff_drive"),
+            FindPackageShare(
+                "ros2_control_diff_drive"
+            ),
             "rviz",
             "diffbot.rviz",
         ]
     )
 
+    # ============================================================
+    # ros2_control_node
+    #
+    # Isaac Simでは:
+    #   use_sim_time:=true
+    #
+    # 実機では:
+    #   use_sim_time:=false
+    # ============================================================
+
     control_node = Node(
         package="controller_manager",
         executable="ros2_control_node",
-        parameters=[robot_controllers],
+        parameters=[
+            robot_controllers,
+            {
+                "use_sim_time": use_sim_time
+            },
+        ],
         output="both",
         remappings=[
-            ("~/robot_description", "/robot_description"),
-            ("/diffbot_base_controller/cmd_vel_unstamped", "/cmd_vel_slow"),
-            ("/diffbot_base_controller/odom", "/odom"),
+            (
+                "~/robot_description",
+                "/robot_description",
+            ),
+            (
+                "/diffbot_base_controller/cmd_vel_unstamped",
+                "/cmd_vel_slow",
+            ),
+            (
+                "/diffbot_base_controller/odom",
+                "/odom",
+            ),
         ],
     )
+
+    # ============================================================
+    # robot_state_publisher
+    # ============================================================
 
     robot_state_pub_node = Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
         output="both",
-        parameters=[robot_description],
+        parameters=[
+            robot_description,
+            {
+                "use_sim_time": use_sim_time
+            },
+        ],
     )
+
+    # ============================================================
+    # RViz2
+    # ============================================================
 
     rviz_node = Node(
         package="rviz2",
         executable="rviz2",
         name="rviz2",
         output="log",
-        arguments=["-d", rviz_config_file],
+        arguments=[
+            "-d",
+            rviz_config_file,
+        ],
+        parameters=[
+            {
+                "use_sim_time": use_sim_time
+            },
+        ],
         condition=IfCondition(gui),
     )
+
+    # ============================================================
+    # joint_state_broadcaster
+    # ============================================================
 
     joint_state_broadcaster_spawner = Node(
         package="controller_manager",
@@ -176,6 +309,10 @@ def generate_launch_description():
         ],
     )
 
+    # ============================================================
+    # diff_drive_controller
+    # ============================================================
+
     robot_controller_spawner = Node(
         package="controller_manager",
         executable="spawner",
@@ -190,23 +327,40 @@ def generate_launch_description():
         ],
     )
 
-    # Delay RViz start after joint_state_broadcaster
-    delay_rviz_after_joint_state_broadcaster_spawner = RegisterEventHandler(
-        event_handler=OnProcessExit(
-            target_action=joint_state_broadcaster_spawner,
-            on_exit=[rviz_node],
+    # ============================================================
+    # joint_state_broadcaster 起動後にRVizを起動
+    # ============================================================
+
+    delay_rviz_after_joint_state_broadcaster_spawner = (
+        RegisterEventHandler(
+            event_handler=OnProcessExit(
+                target_action=joint_state_broadcaster_spawner,
+                on_exit=[
+                    rviz_node
+                ],
+            )
         )
     )
 
-    # Delay robot controller start after joint_state_broadcaster
+    # ============================================================
+    # joint_state_broadcaster 起動後に
+    # diff_drive_controllerを起動
+    # ============================================================
+
     delay_robot_controller_spawner_after_joint_state_broadcaster_spawner = (
         RegisterEventHandler(
             event_handler=OnProcessExit(
                 target_action=joint_state_broadcaster_spawner,
-                on_exit=[robot_controller_spawner],
+                on_exit=[
+                    robot_controller_spawner
+                ],
             )
         )
     )
+
+    # ============================================================
+    # Nodes
+    # ============================================================
 
     nodes = [
         micro_ros_agent,
@@ -217,4 +371,6 @@ def generate_launch_description():
         delay_robot_controller_spawner_after_joint_state_broadcaster_spawner,
     ]
 
-    return LaunchDescription(declared_arguments + nodes)
+    return LaunchDescription(
+        declared_arguments + nodes
+    )

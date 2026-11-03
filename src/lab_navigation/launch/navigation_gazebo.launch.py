@@ -15,7 +15,8 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import (
     Command,
     PathJoinSubstitution,
-    FindExecutable
+    FindExecutable,
+    LaunchConfiguration,
 )
 
 from launch_ros.actions import Node
@@ -26,6 +27,18 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
+
+    # ============================================================
+    # Launch arguments
+    # ============================================================
+
+    use_sim_time = LaunchConfiguration('use_sim_time')
+
+    declare_use_sim_time = DeclareLaunchArgument(
+        'use_sim_time',
+        default_value='true',
+        description='Use the Gazebo /clock topic when true.'
+    )
 
     # ============================================================
     # Paths
@@ -137,7 +150,7 @@ def generate_launch_description():
         parameters=[
             robot_description,
             {
-                'use_sim_time': True
+                'use_sim_time': use_sim_time
             }
         ]
 
@@ -163,6 +176,9 @@ def generate_launch_description():
             '/cmd_vel',
             '60.0',
             '/cmd_vel_slow',
+            '--ros-args',
+            '-p',
+            ['use_sim_time:=', use_sim_time],
         ],
 
         output='screen',
@@ -304,7 +320,7 @@ def generate_launch_description():
 
         launch_arguments={
             'map': map_config,
-            'use_sim_time': 'true',
+            'use_sim_time': use_sim_time,
         }.items(),
 
     )
@@ -466,7 +482,9 @@ def generate_launch_description():
 
                 localization_params,
 
-                ' use_sim_time:=true',
+                ' use_sim_time:=',
+
+                use_sim_time,
 
                 '; exec bash',
             ],
@@ -494,10 +512,16 @@ def generate_launch_description():
             'bash',
             '-c',
 
-            'ros2 launch '
-            'obstacle_cloud_to_scan '
-            'obstacle_cloud_to_scan.launch.py; '
-            'exec bash',
+            [
+                'ros2 launch '
+                'obstacle_cloud_to_scan '
+                'obstacle_cloud_to_scan.launch.py '
+                'use_sim_time:=',
+
+                use_sim_time,
+
+                '; exec bash',
+            ],
 
         ],
 
@@ -575,7 +599,11 @@ def generate_launch_description():
                 'nav2_bringup '
                 'navigation_launch.py ',
 
-                'use_sim_time:=true '
+                'use_sim_time:=',
+
+                use_sim_time,
+
+                ' '
                 'params_file:=',
 
                 nav2_params,
@@ -595,6 +623,14 @@ def generate_launch_description():
     # RViz
     # ============================================================
 
+    # nav2_bringup's rviz_launch.py does not expose use_sim_time, so
+    # start RViz directly in order to pass the parameter to the node.
+    rviz_config = PathJoinSubstitution([
+        FindPackageShare('nav2_bringup'),
+        'rviz',
+        'nav2_default_view.rviz'
+    ])
+
     rviz = ExecuteProcess(
 
         cmd=[
@@ -607,10 +643,13 @@ def generate_launch_description():
             'bash',
             '-c',
 
-            'ros2 launch '
-            'nav2_bringup '
-            'rviz_launch.py; '
-            'exec bash',
+            [
+                'rviz2 -d ',
+                rviz_config,
+                ' --ros-args -p use_sim_time:=',
+                use_sim_time,
+                '; exec bash',
+            ],
 
         ],
 
@@ -624,6 +663,8 @@ def generate_launch_description():
     # ============================================================
 
     return LaunchDescription([
+
+        declare_use_sim_time,
 
         set_gazebo_resource_path,
 
