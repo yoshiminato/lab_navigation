@@ -1,4 +1,6 @@
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
@@ -6,7 +8,14 @@ def generate_launch_description():
     # Get the directory of the package (optional, if needed)
     # package_dir = get_package_share_directory('obstacle_cloud_to_scan')
 
+    use_sim_time = LaunchConfiguration('use_sim_time')
+
     return LaunchDescription([
+        DeclareLaunchArgument(
+            'use_sim_time',
+            default_value='false',
+            description='Use the /clock simulation time source when true.',
+        ),
     
         Node(
             package='obstacle_cloud_to_scan',
@@ -54,7 +63,8 @@ def generate_launch_description():
                 'hole_detection_range_x': 3.0,
                 'hole_detection_range_y': 5.0,
                 'hole_detection_max_height': 0.3,
-                'hole_ground_tolerance': 0.05
+                'hole_ground_tolerance': 0.05,
+                'use_sim_time': use_sim_time,
             }],
         ),
         
@@ -80,7 +90,8 @@ def generate_launch_description():
                 'range_min': 0.6,
                 'range_max': 40.0,
                 'use_inf': True,
-                'inf_epsilon': 1.0
+                'inf_epsilon': 1.0,
+                'use_sim_time': use_sim_time,
             }]
         )
     ])
