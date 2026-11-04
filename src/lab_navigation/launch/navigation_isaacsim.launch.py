@@ -24,6 +24,8 @@ def generate_launch_description():
     # Launch configurations
     # ============================================================
 
+    map_name = LaunchConfiguration('map_name')
+
     use_sim_time = LaunchConfiguration(
         'use_sim_time'
     )
@@ -63,7 +65,7 @@ def generate_launch_description():
         FindPackageShare('lab_navigation'),
         'params',
         'localization',
-        'warehouse_multiple_shelves.yaml'
+        [map_name, '.yaml']
     ])
 
     default_nav2_params = PathJoinSubstitution([
@@ -75,8 +77,8 @@ def generate_launch_description():
     default_map_config = PathJoinSubstitution([
         FindPackageShare('lab_navigation'),
         'map',
-        'warehouse_multiple_shelves',
-        'warehouse_multiple_shelves.yaml'
+        map_name,
+        [map_name, '.yaml']
     ])
 
     default_rviz_config = PathJoinSubstitution([
@@ -89,6 +91,12 @@ def generate_launch_description():
     # ============================================================
     # Launch arguments
     # ============================================================
+
+    declare_map_name = DeclareLaunchArgument(
+        'map_name',
+        default_value='warehouse_multiple_shelves',
+        description='Map name used to select the occupancy map and localization YAML.'
+    )
 
     declare_use_sim_time = DeclareLaunchArgument(
         'use_sim_time',
@@ -434,6 +442,8 @@ def generate_launch_description():
         # --------------------------------------------------------
         # Launch arguments
         # --------------------------------------------------------
+
+        declare_map_name,
 
         declare_use_sim_time,
 
