@@ -18,7 +18,7 @@ source install/setup.bash
 Then start the evaluation launch:
 
 ```bash
-ros2 launch lab_navigation visual_localization_evaluation.launch.py \
+ros2 launch lab_navigation localization_evaluation_real.launch.py \
   bag_output_dir:=/home/user/lab_navigation_ws/captures/hv_building_lab/evaluation/night_run_01
 ```
 

@@ -95,7 +95,7 @@ ros2 run rqt_robot_steering rqt_robot_steering
 
 ## Isaac Sim用Visual Localization＋Nav2のlaunchを作成しました
 
-isaacsim_visual_localization.launch.py をダウンロード
+navigation_isaacsim_visual.launch.py をダウンロード
 
 既存のIsaac Sim用LiDAR Localizationの構成をベースに、自己位置推定部分をHLOCに置き換えたものです。Pythonの構文チェックは通過していますが、ROS 2実環境での起動試験はまだ行っていません。
 
@@ -142,7 +142,7 @@ Nav2 + Map Server + ロボット制御
 
 ```
 ~/lab_navigation_ws/src/lab_navigation/launch/
-    isaacsim_visual_localization.launch.py
+    navigation_isaacsim_visual.launch.py
 ```
 
 ### 2. ビルド
@@ -162,7 +162,7 @@ source install/setup.bash
 最初はHLOCと自律移動を無効にして起動できます。
 
 ```
-ros2 launch lab_navigation isaacsim_visual_localization.launch.py \
+ros2 launch lab_navigation navigation_isaacsim_visual.launch.py \
   start_hloc:=false \
   start_navigation:=false
 ```
@@ -200,7 +200,7 @@ launchの `data_path` は以下を初期値としています。
 参照データの準備が完了したら、まずNav2による移動を無効にしてHLOCだけを確認します。
 
 ```
-ros2 launch lab_navigation isaacsim_visual_localization.launch.py \
+ros2 launch lab_navigation navigation_isaacsim_visual.launch.py \
   start_navigation:=false \
   local_method:=sift \
   data_path:=/home/user/lab_navigation_ws/captures/isaac_gt_test_002

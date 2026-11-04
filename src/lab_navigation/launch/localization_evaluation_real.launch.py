@@ -63,7 +63,7 @@ def generate_launch_description():
             PathJoinSubstitution([
                 FindPackageShare('lab_navigation'),
                 'launch',
-                'navigation.launch.py',
+                'navigation_real_lidar.launch.py',
             ])
         ),
         launch_arguments={

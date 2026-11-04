@@ -43,7 +43,7 @@ usb_cam の参照先が `~/lab_navigation_ws/install/usb_cam` になることを
 
 ```bash
 source ~/lab_navigation_ws/install/local_setup.bash
-ros2 launch lab_navigation diffbot_sim.launch.py
+ros2 launch lab_navigation navigation_gazebo_lidar.launch.py
 ```
 
 端末2で収集を起動します。Gazeboのカメラ、CameraInfo、clockは既存のbridgeを使います。

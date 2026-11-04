@@ -39,7 +39,7 @@ navigation側も同じlaunchをincludeするためAgentが起動する。
 **navigationとdiffbotを同時に別々に起動しないこと。**
 
 ```bash
-ros2 launch lab_navigation navigation.launch.py serial_port:=/dev/ttyUSB0
+ros2 launch lab_navigation navigation_real_lidar.launch.py serial_port:=/dev/ttyUSB0
 ```
 
 モックではAgentを起動せず、実機にも接続しない:
@@ -55,7 +55,7 @@ Agentの存在確認は`ros2 pkg prefix micro_ros_agent`。
 IMU統合前の115200 baud版ファームウェアとは速度が異なるため、PCだけを更新せず
 マイコンも書き換える。ライブラリの既定transportは115200固定なので、スケッチ内で
 921600 baudのopen/read/write/close callbackを登録している。
-`navigation.launch.py`からも`serial_baudrate:=921600`を指定できる。
+`navigation_real_lidar.launch.py`からも`serial_baudrate:=921600`を指定できる。
 
 ## マイコン
 

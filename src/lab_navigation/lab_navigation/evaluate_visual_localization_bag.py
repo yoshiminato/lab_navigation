@@ -545,7 +545,7 @@ def main(args=None):
     parser = argparse.ArgumentParser(
         description=(
             'Compare HLoc camera localization with the LiDAR reference '
-            'trajectory recorded by visual_localization_evaluation.launch.py.'
+            'trajectory recorded by localization_evaluation_real.launch.py.'
         )
     )
     parser.add_argument('bag', type=Path, help='Path to a ROS 2 bag directory')
