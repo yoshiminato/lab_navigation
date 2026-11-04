@@ -16,6 +16,23 @@ from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 
+def terminal_tab(title, command, condition=None):
+    """Run a subsystem in its own GNOME Terminal tab."""
+    return ExecuteProcess(
+        cmd=[
+            'gnome-terminal',
+            '--tab',
+            f'--title={title}',
+            '--',
+            'bash',
+            '-c',
+            [*command, '; exec bash'],
+        ],
+        output='screen',
+        condition=condition,
+    )
+
+
 def generate_launch_description():
     pkg = FindPackageShare('lab_navigation')
     nav_pkg = FindPackageShare('nav2_bringup')
@@ -91,38 +108,41 @@ def generate_launch_description():
         }],
     )
 
-    hloc = Node(
-        package='hloc_localizer', executable='hloc_localizer',
-        name='hloc_localizer', output='screen',
+    hloc = terminal_tab(
+        'hloc_localizer',
+        [
+            'ros2 run hloc_localizer hloc_localizer --ros-args '
+            '-r __node:=hloc_localizer '
+            '-p use_sim_time:=', sim_time,
+            ' -p data_path:=', data_path,
+            ' -p image_topic:=', image_topic,
+            ' -p local_method:=', local_method,
+            ' -p num_matched:=', num_matched,
+            ' -p map_frame:=', map_frame,
+        ],
         condition=IfCondition(start_hloc),
-        parameters=[{
-            'use_sim_time': ParameterValue(sim_time, value_type=bool),
-            'data_path': data_path,
-            'image_topic': image_topic,
-            'local_method': local_method,
-            'num_matched': ParameterValue(num_matched, value_type=int),
-            'map_frame': map_frame,
-        }],
     )
-    hloc_tf = Node(
-        package='hloc_localizer', executable='hloc_tf_publisher',
-        name='hloc_tf_publisher', output='screen',
+    hloc_tf = terminal_tab(
+        'hloc_tf_publisher',
+        [
+            'ros2 run hloc_localizer hloc_tf_publisher --ros-args '
+            '--params-file ', alignment_yaml,
+            ' -p use_sim_time:=', sim_time,
+            ' -p pose_topic:=/hloc/camera_pose',
+            ' -p map_frame:=', map_frame,
+            ' -p odom_frame:=odom',
+            ' -p base_frame:=base_link',
+            ' -p camera_frame:=', camera_frame,
+        ],
         condition=IfCondition(start_hloc),
-        parameters=[alignment_yaml, {
-            'use_sim_time': ParameterValue(sim_time, value_type=bool),
-            'pose_topic': '/hloc/camera_pose',
-            'map_frame': map_frame,
-            'odom_frame': 'odom',
-            'base_frame': 'base_link',
-            'camera_frame': camera_frame,
-        }],
     )
 
-    obstacles = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(PathJoinSubstitution([
-            FindPackageShare('obstacle_cloud_to_scan'),
-            'launch', 'obstacle_cloud_to_scan.launch.py'])),
-        launch_arguments={'use_sim_time': sim_time}.items(),
+    obstacles = terminal_tab(
+        'obstacle_detection',
+        [
+            'ros2 launch obstacle_cloud_to_scan '
+            'obstacle_cloud_to_scan.launch.py use_sim_time:=', sim_time,
+        ],
     )
 
     throttle = ExecuteProcess(
@@ -131,23 +151,23 @@ def generate_launch_description():
         condition=IfCondition(start_navigation),
     )
 
-    nav2 = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(PathJoinSubstitution([
-            nav_pkg, 'launch', 'navigation_launch.py'])),
-        launch_arguments={
-            'use_sim_time': sim_time,
-            'params_file': nav2_params,
-            'log_level': 'info',
-        }.items(),
+    nav2 = terminal_tab(
+        'nav2',
+        [
+            'ros2 launch nav2_bringup navigation_launch.py '
+            'use_sim_time:=', sim_time,
+            ' params_file:=', nav2_params,
+            ' log_level:=info',
+        ],
         condition=IfCondition(start_navigation),
     )
 
-    rviz = Node(
-        package='rviz2', executable='rviz2', name='rviz2', output='screen',
-        arguments=['-d', rviz_config],
-        parameters=[{
-            'use_sim_time': ParameterValue(sim_time, value_type=bool),
-        }],
+    rviz = terminal_tab(
+        'rviz',
+        [
+            'rviz2 -d ', rviz_config,
+            ' --ros-args -p use_sim_time:=', sim_time,
+        ],
         condition=IfCondition(start_rviz),
     )
 
