@@ -1,5 +1,8 @@
 # 撮影時刻のTFを抽出し、COLMAPの位置事前情報へ登録する
 
+Isaac Sim のカメラ ground truth を使う場合は
+[ISAAC_SIM_POSE_PRIORS.md](ISAAC_SIM_POSE_PRIORS.md) の専用 TF 収集・抽出手順を使います。
+
 追加日: 2026-10-06。処理は `export_poses` と `import_pose_priors` の2つです。
 実機にカメラTFがない場合も、`map → base_link` 等を取得し、取り付け位置を補正できます。
 ROSノードやbagの再生は起動せず、保存済みのデータを処理します。

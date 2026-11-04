@@ -142,6 +142,8 @@ COLMAPに渡すのは `captures/sim_001/images/` です。
 詳しいSfM手順は [COLMAP_SFM.md](COLMAP_SFM.md) を参照してください。
 保存済みTFから画像ごとの位置・姿勢を抽出し、COLMAPへ登録する方法は
 [POSE_PRIORS.md](POSE_PRIORS.md) を参照してください。
+Isaac Sim の camera prim の真値を位置制約として使う場合は
+[ISAAC_SIM_POSE_PRIORS.md](ISAAC_SIM_POSE_PRIORS.md) を参照してください。
 
 ## 検証
 

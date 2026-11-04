@@ -9,8 +9,9 @@ import numpy as np
 import pytest
 
 from sfm_capture.export_poses import export_poses, main as export_main
+from sfm_capture.export_isaac_gt_poses import export_isaac_gt_poses
 from sfm_capture.import_pose_priors import import_priors
-from sfm_capture.pose_io import POSE_FIELDS, sha256_file
+from sfm_capture.pose_io import POSE_FIELDS, load_pose_rows, sha256_file
 
 
 def read_rows(path):
@@ -55,7 +56,7 @@ def make_tf_bag(path, messages):
     writer = rosbag2_py.SequentialWriter()
     writer.open(rosbag2_py.StorageOptions(uri=str(path), storage_id='sqlite3'),
                 rosbag2_py.ConverterOptions('', ''))
-    for topic in ('/tf', '/tf_static'):
+    for topic in sorted({topic for topic, _ in messages}):
         writer.create_topic(rosbag2_py.TopicMetadata(name=topic, type='tf2_msgs/msg/TFMessage',
                                                     serialization_format='cdr'))
     for index, (topic, t) in enumerate(messages):
@@ -89,6 +90,48 @@ def test_source_time_interpolation_and_rotated_camera_offset(tmp_path):
     other, = read_rows(direct / 'poses.csv')
     np.testing.assert_allclose([float(other[k]) for k in ('x', 'y', 'z')],
                                [float(row[k]) for k in ('x', 'y', 'z')])
+
+
+def isaac_capture(root, stamps):
+    capture = make_capture(root, stamps)
+    (capture / 'capture_setup.json').write_text(json.dumps(dict(
+        source='simulation', use_sim_time=True, record_bag='true',
+        bag_topics=['/sfm_gt_tf', '/tf', '/clock'])))
+    (capture / 'session.json').write_text(json.dumps(dict(status='complete')))
+    return capture
+
+
+def test_isaac_camera_ground_truth_uses_dedicated_tf_and_colmap_csv(tmp_path):
+    capture = isaac_capture(tmp_path / 'capture', [2 * 10**9, 3 * 10**9])
+    make_tf_bag(capture / 'bag', [
+        ('/tf', transform('map', 'base_link', 2, (100., 0., 0.))),
+        ('/sfm_gt_tf', transform('world', 'sfm_gt_camera', 2, (1., 2., 3.))),
+        ('/sfm_gt_tf', transform('world', 'sfm_gt_camera', 3, (2., 2., 3.))),
+    ])
+    report = export_isaac_gt_poses(capture, tmp_path / 'poses', 'sfm_gt_camera')
+    rows = load_pose_rows(tmp_path / 'poses' / 'poses.csv')
+    assert report['valid'] == 2 and report['valid_for_prior_import']
+    assert report['tf']['used_children'] == ['sfm_gt_camera']
+    assert [row['position'] for row in rows] == [(1., 2., 3.), (2., 2., 3.)]
+    assert [row['image_name'] for row in rows] == ['00000001.png', '00000002.png']
+    assert all(row['position_kind'] == 'camera_center' and row['std'] == (.05, .05, .05)
+               for row in rows)
+
+
+def test_isaac_ground_truth_rejects_estimated_or_non_camera_tf(tmp_path):
+    capture = isaac_capture(tmp_path / 'capture', [2 * 10**9])
+    make_tf_bag(capture / 'bag', [
+        ('/sfm_gt_tf', transform('world', 'sfm_gt_base', 2)),
+        ('/sfm_gt_tf', transform('sfm_gt_base', 'sfm_gt_camera', 2)),
+    ])
+    with pytest.raises(ValueError, match='dynamic, direct world -> sfm_gt_camera'):
+        export_isaac_gt_poses(capture, tmp_path / 'rejected', 'sfm_gt_camera')
+    assert not (tmp_path / 'rejected').exists()
+    setup = json.loads((capture / 'capture_setup.json').read_text())
+    setup['bag_topics'].remove('/sfm_gt_tf')
+    (capture / 'capture_setup.json').write_text(json.dumps(setup))
+    with pytest.raises(ValueError, match='must record'):
+        export_isaac_gt_poses(capture, tmp_path / 'rejected', 'sfm_gt_camera')
 
 
 def test_long_session_retains_early_tf_and_source_origin_label(tmp_path):

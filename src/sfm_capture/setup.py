@@ -19,6 +19,7 @@ setup(
         'export_bag = sfm_capture.export_bag:main',
         'check_dataset = sfm_capture.check_dataset:main',
         'export_poses = sfm_capture.export_poses:main',
+        'export_isaac_gt_poses = sfm_capture.export_isaac_gt_poses:main',
         'import_pose_priors = sfm_capture.import_pose_priors:main',
     ]},
 )

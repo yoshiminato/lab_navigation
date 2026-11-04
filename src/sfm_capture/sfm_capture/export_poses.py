@@ -191,7 +191,8 @@ def interpolation_gap(children, stamps_by_child, stamp, conflicting_stamps=None)
 def export_poses(capture, output, world_frame='map', source_frame='base_link', bag=None,
                  camera_translation=None, camera_quaternion=None, source_is_camera=False,
                  position_std=(1., 1., 1.), max_tf_gap_sec=0.2,
-                 tf_topic='/tf', static_topic='/tf_static', storage_id=None):
+                 tf_topic='/tf', static_topic='/tf_static', storage_id=None,
+                 direct_tf_parent=None):
     from rclpy.clock import ClockType
     from rclpy.time import Time
     from tf2_py import TransformException
@@ -214,6 +215,12 @@ def export_poses(capture, output, world_frame='map', source_frame='base_link', b
         raise FileExistsError(f'Output directory already exists: {output}')
     buffer, parents, stamps, inventory = load_tf(bag, tf_topic, static_topic, storage_id,
                                                world_frame, source_frame)
+    if direct_tf_parent is not None:
+        if parents.get(source_frame) != direct_tf_parent or source_frame not in stamps:
+            raise ValueError(
+                f'Expected a dynamic, direct {direct_tf_parent} -> {source_frame} '
+                f'camera ground-truth transform on {tf_topic}; found parent '
+                f'{parents.get(source_frame)!r}')
     conflicts = {child: set(values) for child, values in inventory['conflicting_dynamic_stamps'].items()}
     output.mkdir(parents=True, exist_ok=False)
     counts = Counter()
