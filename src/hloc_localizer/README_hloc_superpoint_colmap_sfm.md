@@ -1,6 +1,10 @@
 # HLoc + SuperPoint + LightGlue + COLMAP SfM 手順
 ## 画像間引き対応 / Spatial Pairs / COLMAP DB変換 / Pose Prior対応
 
+この文書を、SuperPoint + LightGlueでSfMを作る経路とspatial pair生成の正本とします。
+既存SIFT地図を再利用する場合は [README_HLoc_ROS2_SP_LG.md](README_HLoc_ROS2_SP_LG.md)、
+文書全体の関係は [../../docs/README.md](../../docs/README.md) を参照してください。
+
 更新日: 2026-10-14
 
 ---

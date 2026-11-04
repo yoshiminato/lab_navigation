@@ -1,5 +1,8 @@
 # Isaac Sim のカメラ ground truth で位置制約付き SfM を行う
 
+このSfMモデルをHLocとNav2へ接続する後続工程は
+[ISAAC_SIM_VISUAL_LOCALIZATION.md](ISAAC_SIM_VISUAL_LOCALIZATION.md)を参照してください。
+
 この手順では、Isaac Sim の**撮影カメラ prim のワールド位置**を画像の撮影時刻に対応付けます。
 ロボットの `/odom` や LiDAR localization の `map → odom` は ground truth として扱いません。
 出力は既存の [POSE_PRIORS.md](POSE_PRIORS.md) と同じ `poses.csv` 形式で、

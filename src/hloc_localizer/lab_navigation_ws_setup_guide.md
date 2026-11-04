@@ -1,5 +1,10 @@
 # lab_navigation_ws 環境構築手順書
 
+この文書はHLocの仮想環境構築、COLMAP SIFTのHLoc形式への変換、NetVLAD生成の
+詳細手順です。Isaac Simでの一連の実行順序は
+[../../docs/ISAAC_SIM_VISUAL_LOCALIZATION.md](../../docs/ISAAC_SIM_VISUAL_LOCALIZATION.md)、
+文書全体の関係は [../../docs/README.md](../../docs/README.md) を参照してください。
+
 ## 対象
 
 別PCで `lab_navigation_ws` を clone 済みの状態から、HLoc + ROS 2 Humble + Visual Localization の動作確認環境を構築する。
@@ -604,257 +609,35 @@ num_inliers: 17
 
 ---
 
-## 21. hloc_localizer をビルド
+## 21. ROS 2パッケージをビルド
+
+オフライン参照データの検証後、仮想環境を抜けてROS 2パッケージをビルドします。
 
 ```bash
-deactivate
+deactivate 2>/dev/null || true
+cd ~/lab_navigation_ws
 source /opt/ros/humble/setup.bash
 
-cd ~/lab_navigation_ws
-
-colcon build \
-  --packages-select hloc_localizer \
+colcon build --packages-select hloc_localizer lab_navigation \
   --symlink-install
 
 source install/setup.bash
 ```
 
----
-
-## 22. robot_state_publisher
-
-`diffbot_control.launch.py` では既に `robot_state_publisher` を起動しているため、別途追加不要。
-
-URDF の TF 構造:
-
-```text
-base_link
-└── camera_link
-    └── camera_optical_frame
-```
-
-現在のカメラ取付値:
-
-```text
-base_link -> camera_link
-xyz = 0.290 0.000 0.338
-rpy = 0 0 0
-
-camera_link -> camera_optical_frame
-xyz = 0 0 0
-rpy = -pi/2 0 -pi/2
-```
-
-カメラ取付位置を変更する場合は、HLoc ノード側へ値をハードコードせず、URDF だけを変更する。
-
-HLoc ノードは TF から `base_link -> camera_optical_frame` を取得する。
-
----
-
-## 23. Mock hardware で TF 確認
-
-実機や micro-ROS を使わず確認する場合:
-
-```bash
-source /opt/ros/humble/setup.bash
-source ~/lab_navigation_ws/install/setup.bash
-
-ros2 launch lab_navigation diffbot_control.launch.py \
-  use_mock_hardware:=true \
-  start_micro_ros_agent:=false \
-  gui:=false
-```
-
-別ターミナル:
-
-```bash
-source /opt/ros/humble/setup.bash
-source ~/lab_navigation_ws/install/setup.bash
-
-ros2 node list | grep robot_state
-```
-
-正常なら:
-
-```text
-/robot_state_publisher
-```
-
-カメラ TF 確認:
-
-```bash
-ros2 run tf2_ros tf2_echo \
-  base_link camera_optical_frame
-```
-
-Translation は概ね:
-
-```text
-x = 0.290
-y = 0.000
-z = 0.338
-```
-
----
-
-## 24. odom -> base_link を確認
-
-```bash
-ros2 run tf2_ros tf2_echo \
-  odom base_link
-```
-
-値が連続表示されれば OK。
-
----
-
-## 25. HLoc から map -> odom を発行
-
-現段階では Visual Localization 単独試験として HLoc が `map -> odom` を発行する。
-
-TF 全体:
-
-```text
-map
-└── odom
-    └── base_link
-        ├── camera_link
-        │   └── camera_optical_frame
-        ├── imu_link
-        └── velodyne
-```
-
-HLoc ノード実行前に:
-
-```bash
-cd ~/lab_navigation_ws
-
-source /opt/ros/humble/setup.bash
-source ~/lab_navigation_ws/install/setup.bash
-source ~/lab_navigation_ws/.venv/bin/activate
-```
-
-実行:
-
-```bash
-ros2 run hloc_localizer hloc_tf_publisher \
-  --ros-args \
-  -p result_file:=/home/user/lab_navigation_ws/captures/hv_building_lab/20261010/hloc_output/localization_results.txt \
-  -p query_name:=test1.png
-```
-
-確認:
-
-```bash
-ros2 run tf2_ros tf2_echo map odom
-```
-
-さらに:
-
-```bash
-ros2 run tf2_ros tf2_echo map base_link
-```
-
-両方取得できれば、以下が接続できている。
-
-```text
-map -> odom -> base_link
-```
-
-### 注意
-
-現在は `test1.png` の固定 HLoc 姿勢を使った確認段階なので、テスト中はロボットを動かさない。
-
-本番では、新しいカメラ画像の HLoc 結果と、その画像取得時刻の `odom -> base_link` を使って `map -> odom` を更新する。
-
----
-
-## 26. lidar_localization_ros2 との競合に注意
-
-`lidar_localization_ros2` も `map -> odom` を発行する。
-
-したがって以下を同時に実行しない。
-
-```text
-lidar_localization_ros2 -> map -> odom
-HLoc                    -> map -> odom
-```
-
-Visual 単独試験:
-
-```text
-HLoc -> map -> odom
-```
-
-LiDAR 単独試験:
-
-```text
-lidar_localization_ros2 -> map -> odom
-```
-
-将来的には Visual / LiDAR の pose を統合し、最終的な `map -> odom` の発行元を1つにする。
-
----
-
-## 27. 実機で micro-ROS を使う場合
-
-`micro_ros_agent` が別 workspace にある場合は source 順が重要。
-
-```bash
-source /opt/ros/humble/setup.bash
-source ~/micro_ros_ws/install/setup.bash
-source ~/lab_navigation_ws/install/setup.bash
-```
-
-確認:
-
-```bash
-ros2 pkg prefix micro_ros_agent
-```
-
-HLoc も使う場合は最後に:
-
-```bash
-source ~/lab_navigation_ws/.venv/bin/activate
-```
-
-実機運用時の基本順序:
-
-```bash
-source /opt/ros/humble/setup.bash
-source ~/micro_ros_ws/install/setup.bash
-source ~/lab_navigation_ws/install/setup.bash
-source ~/lab_navigation_ws/.venv/bin/activate
-```
-
----
-
-## 28. 最終チェックリスト
-
-- [ ] `ros2` が使用できる
-- [ ] `lab_navigation_ws` が `colcon build` できる
-- [ ] `.venv` 内で `hloc` import OK
-- [ ] `pycolmap` import OK
-- [ ] `rclpy` import OK
-- [ ] `cv_bridge` import OK
-- [ ] `captures/.../sparse/0` が存在する
-- [ ] `feats-shift.h5` を1370画像で生成できる
-- [ ] NetVLAD retrieval が40 pairs
-- [ ] test1: 463 matches / 94 inliers
-- [ ] test2: 74 matches / 17 inliers
-- [ ] `robot_state_publisher` が起動する
-- [ ] `base_link -> camera_optical_frame` が取得できる
-- [ ] `odom -> base_link` が取得できる
-- [ ] HLoc から `map -> odom` が取得できる
-- [ ] `map -> base_link` が取得できる
-
----
-
-## 29. 重要事項まとめ
-
-1. データフォルダは `capture` ではなく `captures`。
-2. HLoc 実行時は `ROS -> workspace -> .venv` の順で source する。
-3. `colcon build` 時は `.venv` を `deactivate` する。
-4. カメラ取付位置は HLoc ノードへハードコードせず URDF で管理する。
-5. `map -> odom` は HLoc と `lidar_localization_ros2` から同時配信しない。
-6. 現段階の HLoc TF は固定 Query による確認用。本番ではリアルタイム画像入力と時刻同期を実装する。
+ROS 2でのノード起動、topic、TF確認は
+[README_HLoc_ROS2.md](README_HLoc_ROS2.md)を参照してください。
+Isaac Simでの起動と`world -> map`補正は
+[../../docs/ISAAC_SIM_VISUAL_LOCALIZATION.md](../../docs/ISAAC_SIM_VISUAL_LOCALIZATION.md)
+を参照してください。
+
+## 22. 環境構築の完了条件
+
+- [ ] `.venv`内で`hloc`, `pycolmap`, `torch`, `h5py`をimportできる
+- [ ] COLMAPモデルの登録画像数を確認した
+- [ ] `feats-shift.h5`を登録済み画像から生成した
+- [ ] `global-ref-netvlad.h5`を登録済み参照画像から生成した
+- [ ] オフラインqueryでPnPの成功とinlier数を確認した
+- [ ] `hloc_localizer`と`lab_navigation`をビルドした
+
+データフォルダ名、画像数、カメラ内部パラメータ、特徴量方式、ソフトウェア版は
+データセットごとに記録します。別のSfMモデルで作成した特徴量やNetVLADを混在させません。

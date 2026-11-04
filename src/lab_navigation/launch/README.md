@@ -14,6 +14,15 @@
 
 例えば `ros2 launch lab_navigation navigation_real_lidar.launch.py` で起動します。
 Isaac Sim 用の二つは、Isaac Sim 側が ROS トピックを配信している状態で使います。
+`navigation_isaacsim_visual.launch.py`はHLoc測位、HLoc TF、障害物検出、
+Nav2、RVizのログをGNOME Terminalの個別タブに表示します。
+HLoc の Isaac Sim `world` 座標から Grid Map の `map` 座標への変換は、
+`map/<map_name>/world_to_map.yaml`に保存します。別ファイルを使う場合は
+`alignment_yaml` launch引数で指定します。未校正の地図で暗黙に無補正を使わないよう、
+ファイルがなければ起動を失敗させます。
+Isaac SimのSfM作成からHLoc参照データ、起動、確認までの手順は
+[../../../docs/ISAAC_SIM_VISUAL_LOCALIZATION.md](../../../docs/ISAAC_SIM_VISUAL_LOCALIZATION.md)
+を参照してください。
 
 実験用は目的が分かる名前にします。`localization_evaluation_real.launch.py` は
 実機で LiDAR 測位を Nav2 に使い、HLoc の推定結果を比較用に記録します。

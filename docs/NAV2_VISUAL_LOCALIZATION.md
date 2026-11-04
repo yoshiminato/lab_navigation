@@ -1,8 +1,11 @@
 # COLMAP の単眼 SfM 地図から Visual Localization を行い、Nav2 に接続する
 
-調査日: 2026-09-23。対象: 単眼 USB カメラ、ROS 2 Humble、既存の Nav2。
+初版調査日: 2026-09-23。対象: 単眼カメラ、ROS 2 Humble、Nav2。
 
-この文書は、画像収集と SfM の次に行う作業の手順書です。このワークスペースで提供する収集システムは画像と時刻の記録を担当します。**オンラインの Visual Localization ノード、Nav2 用 TF 接続ノード、自動走行機能は今回の収集パッケージには含まれていません。** 以下では、既存ツールで試せるオフライン検証と、実機に接続するための実装を区別します。
+この文書は、Visual LocalizationをNav2へ接続する一般的な構成、座標変換、
+オフライン検証の背景資料です。現在のIsaac Sim向け実装と実行手順は
+[ISAAC_SIM_VISUAL_LOCALIZATION.md](ISAAC_SIM_VISUAL_LOCALIZATION.md)を正本とします。
+HLoc ROS 2ノードと`map -> odom`接続は現在ワークスペースに実装済みです。
 
 ## 1. 採用する構成
 

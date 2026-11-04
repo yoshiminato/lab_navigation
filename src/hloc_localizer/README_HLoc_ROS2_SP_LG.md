@@ -1,6 +1,10 @@
 # HLoc ROS 2 Localization 手順書
 ## SIFT地図から SuperPoint + LightGlue 地図を追加し、ROS 2で使用する
 
+この文書は既存SIFT地図からSP + LG用の参照地図を追加する詳細手順です。
+ROS 2での通常起動は [README_HLoc_ROS2.md](README_HLoc_ROS2.md)、
+文書全体の関係は [../../docs/README.md](../../docs/README.md) を参照してください。
+
 このREADMEは、すでにSIFTで作成したCOLMAP/HLoc地図がある状態から、
 
 1. 元のSIFT地図を残す
