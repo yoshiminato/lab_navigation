@@ -1,0 +1,7 @@
+# Isaac Sim world → GLIM map
+hloc_tf_publisher:
+  ros__parameters:
+    world_to_map_x: 5.0
+    world_to_map_y: 10.0
+    world_to_map_z: 0.0
+    world_to_map_yaw_deg: 0.0

@@ -1,7 +1,10 @@
 build
 install
 log
-src/lab_navigation/map
+src/lab_navigation/map/*
+!src/lab_navigation/map/*/
+src/lab_navigation/map/*/*
+!src/lab_navigation/map/*/world_to_map.yaml
 src/lab_navigation/pcd
 src/lab_navigation/bag
 captures/

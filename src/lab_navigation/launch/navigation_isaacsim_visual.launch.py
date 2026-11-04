@@ -1,15 +1,11 @@
-"""Isaac Sim + HLoc Visual Localization + Nav2 (ROS 2 Humble).
+"""Isaac Sim + HLOC + Nav2: GLIM map alignment per map_name.
 
-IMPORTANT:
-- Isaac Sim publishes /clock, /camera/image_raw, /camera/camera_info,
-  /velodyne_points and simulated MCU wheel topics.
-- HLoc must have a compatible reference dataset at data_path (the SfM
-  sparse/0 directory alone is NOT a complete HLoc reference database).
-- The occupancy grid map must be aligned with the SfM 'world' coordinates.
-- Only hloc_tf_publisher shall publish map -> odom. /sfm_gt_tf is GT for
-  evaluation only, and MUST NOT feed Nav2 localization.
+Place each map's world_to_map.yaml in:
+  lab_navigation/map/<map_name>/world_to_map.yaml
+
+This ROS parameter file defines rigid T_map_world.  Do not silently assume
+identity for an uncalibrated map: a missing file should fail startup.
 """
-
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription
 from launch.conditions import IfCondition
@@ -40,6 +36,9 @@ def generate_launch_description():
     camera_frame = LaunchConfiguration('camera_frame')
     map_frame = LaunchConfiguration('map_frame')
 
+    # The default follows map_name. An explicit override remains possible.
+    alignment_yaml = LaunchConfiguration('alignment_yaml')
+
     arguments = [
         DeclareLaunchArgument('map_name', default_value='warehouse_multiple_shelves'),
         DeclareLaunchArgument('use_sim_time', default_value='true'),
@@ -49,24 +48,23 @@ def generate_launch_description():
             pkg, 'params', 'nav2_params.yaml'])),
         DeclareLaunchArgument('map', default_value=PathJoinSubstitution([
             pkg, 'map', map_name, [map_name, '.yaml']])),
+        DeclareLaunchArgument('alignment_yaml', default_value=PathJoinSubstitution([
+            pkg, 'map', map_name, 'world_to_map.yaml']),
+            description='Per-map rigid T_map_world parameters for hloc_tf_publisher.'),
         DeclareLaunchArgument('rviz_config', default_value=PathJoinSubstitution([
             nav_pkg, 'rviz', 'nav2_default_view.rviz'])),
         DeclareLaunchArgument('start_rviz', default_value='true'),
         DeclareLaunchArgument('start_navigation', default_value='true'),
-        DeclareLaunchArgument('start_hloc', default_value='true',
-                              description='Disable until compatible HLoc reference files exist.'),
+        DeclareLaunchArgument('start_hloc', default_value='true'),
         DeclareLaunchArgument('image_topic', default_value='/camera/image_raw'),
         DeclareLaunchArgument('data_path',
-                              default_value='/home/user/lab_navigation_ws/captures/isaac_gt_test_002',
-                              description='HLoc dataset ROOT, not sparse/0; must contain compatible HLoc features/retrieval.'),
-        DeclareLaunchArgument('local_method', default_value='sift',
-                              description='sift or superpoint_lightglue; dataset must match method.'),
+                              default_value='/home/user/lab_navigation_ws/captures/isaac_gt_test_002/colmap_gt'),
+        DeclareLaunchArgument('local_method', default_value='sift'),
         DeclareLaunchArgument('num_matched', default_value='20'),
         DeclareLaunchArgument('camera_frame', default_value='camera_optical_frame'),
         DeclareLaunchArgument('map_frame', default_value='map'),
     ]
 
-    # Robot control uses simulated wheel states, and publishes odom -> base_link.
     robot = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(PathJoinSubstitution([
             pkg, 'launch', 'diffbot_control.launch.py'])),
@@ -78,42 +76,48 @@ def generate_launch_description():
         }.items(),
     )
 
-    # Map server only. Do not use nav2_bringup/localization_launch.py: it starts AMCL.
     map_server = Node(
         package='nav2_map_server', executable='map_server', name='map_server',
-        output='screen', parameters=[{'use_sim_time': sim_time,
-                                      'yaml_filename': map_yaml}],
+        output='screen', parameters=[{
+            'use_sim_time': ParameterValue(sim_time, value_type=bool),
+            'yaml_filename': map_yaml,
+        }],
     )
     map_manager = Node(
         package='nav2_lifecycle_manager', executable='lifecycle_manager',
-        name='lifecycle_manager_map', output='screen',
-        parameters=[{'use_sim_time': sim_time,
-                     'autostart': True, 'node_names': ['map_server']}],
+        name='lifecycle_manager_map', output='screen', parameters=[{
+            'use_sim_time': ParameterValue(sim_time, value_type=bool),
+            'autostart': True, 'node_names': ['map_server'],
+        }],
     )
 
-    # Use the existing HLoc ROS2 executables, not the GT transform.
     hloc = Node(
         package='hloc_localizer', executable='hloc_localizer',
         name='hloc_localizer', output='screen',
         condition=IfCondition(start_hloc),
-        parameters=[{'use_sim_time': sim_time,
-                     'data_path': data_path,
-                     'image_topic': image_topic,
-                     'local_method': local_method,
-                     'num_matched': ParameterValue(num_matched, value_type=int),
-                     'map_frame': map_frame}],
+        parameters=[{
+            'use_sim_time': ParameterValue(sim_time, value_type=bool),
+            'data_path': data_path,
+            'image_topic': image_topic,
+            'local_method': local_method,
+            'num_matched': ParameterValue(num_matched, value_type=int),
+            'map_frame': map_frame,
+        }],
     )
     hloc_tf = Node(
         package='hloc_localizer', executable='hloc_tf_publisher',
         name='hloc_tf_publisher', output='screen',
         condition=IfCondition(start_hloc),
-        parameters=[{'use_sim_time': sim_time,
-                     'pose_topic': '/hloc/camera_pose',
-                     'map_frame': map_frame, 'odom_frame': 'odom',
-                     'base_frame': 'base_link', 'camera_frame': camera_frame}],
+        parameters=[alignment_yaml, {
+            'use_sim_time': ParameterValue(sim_time, value_type=bool),
+            'pose_topic': '/hloc/camera_pose',
+            'map_frame': map_frame,
+            'odom_frame': 'odom',
+            'base_frame': 'base_link',
+            'camera_frame': camera_frame,
+        }],
     )
 
-    # LiDAR remains exclusively for obstacle avoidance, not localization.
     obstacles = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(PathJoinSubstitution([
             FindPackageShare('obstacle_cloud_to_scan'),
@@ -121,7 +125,6 @@ def generate_launch_description():
         launch_arguments={'use_sim_time': sim_time}.items(),
     )
 
-    # Match the existing simulated drive controller's /cmd_vel_slow wiring.
     throttle = ExecuteProcess(
         cmd=['ros2', 'run', 'topic_tools', 'throttle', 'messages',
              '/cmd_vel', '60.0', '/cmd_vel_slow'], output='screen',
@@ -131,19 +134,24 @@ def generate_launch_description():
     nav2 = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(PathJoinSubstitution([
             nav_pkg, 'launch', 'navigation_launch.py'])),
-        launch_arguments={'use_sim_time': sim_time,
-                          'params_file': nav2_params,
-                          'log_level': 'info'}.items(),
+        launch_arguments={
+            'use_sim_time': sim_time,
+            'params_file': nav2_params,
+            'log_level': 'info',
+        }.items(),
         condition=IfCondition(start_navigation),
     )
 
     rviz = Node(
         package='rviz2', executable='rviz2', name='rviz2', output='screen',
         arguments=['-d', rviz_config],
-        parameters=[{'use_sim_time': sim_time}],
+        parameters=[{
+            'use_sim_time': ParameterValue(sim_time, value_type=bool),
+        }],
         condition=IfCondition(start_rviz),
     )
 
-    return LaunchDescription(arguments + [robot, map_server, map_manager,
-                                          hloc_tf, hloc, obstacles, throttle,
-                                          nav2, rviz])
+    return LaunchDescription(arguments + [
+        robot, map_server, map_manager, hloc_tf, hloc,
+        obstacles, throttle, nav2, rviz,
+    ])
