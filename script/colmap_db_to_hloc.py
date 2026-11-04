@@ -11,8 +11,8 @@ import pycolmap
 def main(database_path, model_path, output_path):
     reconstruction = pycolmap.Reconstruction(model_path)
 
-    registered_names = {
-        image.name
+    registered_images = {
+        image.name: image
         for image in reconstruction.images.values()
     }
 
@@ -56,7 +56,7 @@ def main(database_path, model_path, output_path):
             desc_blob,
         ) in rows:
 
-            if name not in registered_names:
+            if name not in registered_images:
                 continue
 
             keypoints = np.frombuffer(
@@ -71,6 +71,17 @@ def main(database_path, model_path, output_path):
                 raise RuntimeError(
                     f"{name}: keypoints={kp_rows}, "
                     f"descriptors={desc_rows}"
+                )
+
+            model_points = len(
+                registered_images[name].points2D
+            )
+
+            if kp_rows != model_points:
+                raise RuntimeError(
+                    f"{name}: database keypoints={kp_rows}, "
+                    f"model points2D={model_points}. "
+                    "The database and SfM model do not match."
                 )
 
             # COLMAP → HLoc pixel convention
