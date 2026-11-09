@@ -74,6 +74,14 @@ def generate_launch_description():
         default_value='true',
     )
 
+    hloc_data_path_arg = DeclareLaunchArgument(
+        'hloc_data_path',
+        default_value='/home/user/lab_navigation_ws/captures/hv_building_lab/20261010',
+    )
+    local_method_arg = DeclareLaunchArgument(
+        'local_method', default_value='superpoint',
+    )
+
     ros2_control = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution([
@@ -194,21 +202,17 @@ def generate_launch_description():
             '--',
             'bash',
             '-c',
-            (
+            [
                 'ros2 run hloc_localizer hloc_localizer '
-                '--ros-args '
-                '-p data_path:='
-                '/home/user/lab_navigation_ws/'
-                'captures/hv_building_lab/20261010 '
-                '-p image_topic:=/camera/image_raw '
-                '-p local_method:=superpoint_lightglue '
-                '-p num_matched:=10 '
-                '-p min_inliers:=12 '
-                '-p ransac_thresh:=12.0 '
-                '-p descriptor_cache_size:=40 '
-                '-p map_frame:=map; '
-                'exec bash'
-            ),
+                '--ros-args -p data_path:=', LaunchConfiguration('hloc_data_path'),
+                ' -p image_topic:=/camera/image_raw '
+                ' -p local_method:=', LaunchConfiguration('local_method'),
+                ' -p num_matched:=10 '
+                ' -p min_inliers:=12 '
+                ' -p ransac_thresh:=12.0 '
+                ' -p descriptor_cache_size:=40 '
+                ' -p map_frame:=map; exec bash',
+            ],
         ],
         output='screen',
     )
@@ -363,6 +367,8 @@ def generate_launch_description():
         serial_port_arg,
         serial_baudrate_arg,
         start_agent_arg,
+        hloc_data_path_arg,
+        local_method_arg,
 
         ros2_control,
 

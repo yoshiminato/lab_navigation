@@ -14,6 +14,8 @@ from hloc import match_features
 from hloc import matchers
 from hloc.utils.base_model import dynamic_load
 
+from .dataset_layout import model_dir, reference_features
+
 
 class SuperPointLightGlueBackend:
 
@@ -36,19 +38,9 @@ class SuperPointLightGlueBackend:
         # Paths
         # ----------------------------------------------------
 
-        self.hloc_dir = (
-            self.data_path /
-            'hloc_output_superpoint_lightglue'
-        )
-
-        self.sfm_path = (
-            self.hloc_dir /
-            'sfm-superpoint-lightglue-colmapgv'
-        )
-
-        self.reference_local_features = (
-            self.hloc_dir /
-            'feats-ref-superpoint.h5'
+        self.sfm_path = model_dir(self.data_path, self.method_name)
+        self.reference_local_features = reference_features(
+            self.data_path, self.method_name,
         )
 
         if not self.sfm_path.exists():

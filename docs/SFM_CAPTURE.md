@@ -42,18 +42,26 @@ usb_cam の参照先が `~/lab_navigation_ws/install/usb_cam` になることを
 端末1で既存のシミュレーションを起動します。
 
 ```bash
-source ~/lab_navigation_ws/install/local_setup.bash
+WORKSPACE_DIR="$HOME/lab_navigation_ws"
+SESSION_NAME="sim_001"
+CAPTURE_DIR="$WORKSPACE_DIR/captures/$SESSION_NAME"
+test ! -e "$CAPTURE_DIR" || { echo "output already exists: $CAPTURE_DIR"; exit 1; }
+source "$WORKSPACE_DIR/install/local_setup.bash"
 ros2 launch lab_navigation navigation_gazebo_lidar.launch.py
 ```
 
 端末2で収集を起動します。Gazeboのカメラ、CameraInfo、clockは既存のbridgeを使います。
 
 ```bash
-cd ~/lab_navigation_ws
+WORKSPACE_DIR="$HOME/lab_navigation_ws"
+SESSION_NAME="sim_001"
+CAPTURE_DIR="$WORKSPACE_DIR/captures/$SESSION_NAME"
+test ! -e "$CAPTURE_DIR" || { echo "output already exists: $CAPTURE_DIR"; exit 1; }
+cd "$WORKSPACE_DIR"
 source install/local_setup.bash
 ros2 launch lab_navigation sfm_capture.launch.py \
   source:=simulation \
-  output_dir:=$PWD/captures/sim_001 \
+  output_dir:="$CAPTURE_DIR" \
   save_fps:=2.0 duration_sec:=60.0
 ```
 
@@ -81,9 +89,13 @@ ros2 topic echo /clock --once
 ## USBカメラで保存
 
 ```bash
+WORKSPACE_DIR="$HOME/lab_navigation_ws"
+SESSION_NAME="usb_001"
+CAPTURE_DIR="$WORKSPACE_DIR/captures/$SESSION_NAME"
+test ! -e "$CAPTURE_DIR" || { echo "output already exists: $CAPTURE_DIR"; exit 1; }
 ros2 launch lab_navigation sfm_capture.launch.py \
   source:=usb device:=/dev/video0 \
-  output_dir:=$PWD/captures/usb_001
+  output_dir:="$CAPTURE_DIR"
 ```
 
 USBの解像度・露光・フォーカス設定は `src/sfm_capture/config/camera.yaml` を使います。

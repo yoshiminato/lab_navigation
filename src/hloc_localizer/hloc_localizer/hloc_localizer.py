@@ -52,6 +52,7 @@ from .sift_backend import (
 from .superpoint_lightglue_backend import (
     SuperPointLightGlueBackend,
 )
+from .dataset_layout import retrieval_features
 
 
 # ============================================================
@@ -316,7 +317,7 @@ class HlocLocalizerNode(Node):
 
         elif (
             self.local_method
-            == 'superpoint_lightglue'
+            in ('superpoint', 'superpoint_lightglue')
         ):
 
             self.backend = (
@@ -335,7 +336,7 @@ class HlocLocalizerNode(Node):
                 f'{self.local_method}\n'
                 'Available methods: '
                 'sift, '
-                'superpoint_lightglue'
+                'superpoint (alias: superpoint_lightglue)'
             )
 
         # ====================================================
@@ -451,15 +452,7 @@ class HlocLocalizerNode(Node):
         # Both local methods share this.
         # ====================================================
 
-        self.hloc_dir = (
-            self.data_path /
-            'hloc_output'
-        )
-
-        self.reference_global_features = (
-            self.hloc_dir /
-            'global-ref-netvlad.h5'
-        )
+        self.reference_global_features = retrieval_features(self.data_path)
 
         if not (
             self.reference_global_features

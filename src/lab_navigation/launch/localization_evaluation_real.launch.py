@@ -49,6 +49,9 @@ def generate_launch_description():
             'hv_building_lab/20261010'
         ),
     )
+    local_method_arg = DeclareLaunchArgument(
+        'local_method', default_value='superpoint',
+    )
     bag_output_dir_arg = DeclareLaunchArgument(
         'bag_output_dir',
         default_value=(
@@ -101,7 +104,7 @@ def generate_launch_description():
         parameters=[{
             'data_path': LaunchConfiguration('hloc_data_path'),
             'image_topic': '/camera/image_raw',
-            'local_method': 'superpoint_lightglue',
+            'local_method': LaunchConfiguration('local_method'),
             'num_matched': 10,
             'min_inliers': 12,
             'ransac_thresh': 12.0,
@@ -139,6 +142,7 @@ def generate_launch_description():
         start_agent_arg,
         start_rviz_arg,
         hloc_data_path_arg,
+        local_method_arg,
         bag_output_dir_arg,
         record_bag_arg,
         lidar_navigation,

@@ -54,15 +54,22 @@ COLMAPとPyCOLMAPのDB形式が適合する環境を使ってください。
 
 ## 2. TFから画像と一対一のCSVを作る
 
-以下ではBashの同じ端末で変数を設定します。出力先は新しい名前を指定してください。
+以下ではBashの同じ端末で変数を設定します。`$PWD` や固定の例示パスは使わず、
+処理対象の収集ディレクトリを `CAPTURE_DIR` に1回だけ設定してください。
+別端末で続ける場合は、変数をもう一度設定します。
 
 ```bash
-sfm_capture_dir="$PWD/captures/1007"
-sfm_pose_dir="$sfm_capture_dir/poses_map_base"
-sfm_colmap_dir="$sfm_capture_dir"
+WORKSPACE_DIR="$HOME/lab_navigation_ws"
+SESSION_NAME="1007"
+CAPTURE_DIR="$WORKSPACE_DIR/captures/$SESSION_NAME"
+POSE_DIR="$CAPTURE_DIR/poses_map_base"
+COLMAP_DIR="$CAPTURE_DIR/maps/sift"
+
+test -d "$CAPTURE_DIR/images" || { echo "images not found: $CAPTURE_DIR/images"; exit 1; }
+test -f "$CAPTURE_DIR/camera_info.json" || { echo "camera_info.json not found"; exit 1; }
 
 ros2 run sfm_capture export_poses \
-  "$sfm_capture_dir" "$sfm_pose_dir" \
+  "$CAPTURE_DIR" "$POSE_DIR" \
   --world-frame map --source-frame base_link \
   --position-std 1.0 1.0 1.0
 ```
@@ -79,7 +86,7 @@ COLMAPに登録した場合、車体原点をカメラ中心の近似値とし�
 
 ```bash
 ros2 run sfm_capture export_poses \
-  "$sfm_capture_dir" "$sfm_capture_dir/poses_map_camera_offset" \
+  "$CAPTURE_DIR" "$CAPTURE_DIR/poses_map_camera_offset" \
   --world-frame map --source-frame base_link \
   --camera-translation 0.37 0.0 0.10 \
   --camera-quaternion -0.5 0.5 -0.5 0.5 \
@@ -105,7 +112,7 @@ p_world_camera = p_world_source + R_world_source × p_source_camera
 
 ```bash
 ros2 run sfm_capture export_poses \
-  "$sfm_capture_dir" "$sfm_capture_dir/poses_map_camera_tf" \
+  "$CAPTURE_DIR" "$CAPTURE_DIR/poses_map_camera_tf" \
   --world-frame map --source-frame camera_optical_frame \
   --source-is-camera --position-std 1.0 1.0 1.0
 ```
@@ -141,10 +148,10 @@ ros2 run sfm_capture export_poses \
 実機のレンズモデルと校正値は [COLMAP_SFM.md](COLMAP_SFM.md) に従って指定してください。
 
 ```bash
-mkdir -p "$sfm_colmap_dir"
+mkdir -p "$COLMAP_DIR"
 colmap feature_extractor \
-  --database_path "$sfm_colmap_dir/features.db" \
-  --image_path "$sfm_capture_dir/images" \
+  --database_path "$COLMAP_DIR/features.db" \
+  --image_path "$CAPTURE_DIR/images" \
   --ImageReader.single_camera 1 \
   --ImageReader.camera_model OPENCV \
   --FeatureExtraction.use_gpu 0
@@ -157,8 +164,8 @@ colmap feature_extractor \
 
 ```bash
 ros2 run sfm_capture import_pose_priors \
-  "$sfm_pose_dir/poses.csv" "$sfm_colmap_dir/features.db" \
-  --output-database "$sfm_colmap_dir/database.db" \
+  "$POSE_DIR/poses.csv" "$COLMAP_DIR/features.db" \
+  --output-database "$COLMAP_DIR/database.db" \
   --skip-missing
   
 ```
@@ -202,12 +209,12 @@ COLMAPの `images.txt` のtranslationとは異なり、ここで登録する `x,
 撮影データ自体の整合性も確認できます。
 
 ```bash
-ros2 run sfm_capture check_dataset "$sfm_capture_dir"
-python3 -m json.tool "$sfm_pose_dir/poses_report.json"
-python3 -m json.tool "$sfm_colmap_dir/database.db.pose_priors.json"
+ros2 run sfm_capture check_dataset "$CAPTURE_DIR"
+python3 -m json.tool "$POSE_DIR/poses_report.json"
+python3 -m json.tool "$COLMAP_DIR/database.db.pose_priors.json"
 
 ros2 run sfm_capture import_pose_priors \
-  "$sfm_pose_dir/poses.csv" "$sfm_colmap_dir/database.db" --verify-only
+  "$POSE_DIR/poses.csv" "$COLMAP_DIR/database.db" --verify-only
 ```
 
 DB登録時も自動検証しますが、`--verify-only` で後から再確認できます。
@@ -243,7 +250,7 @@ DBへ登録しただけで、すべてのmatcherが位置を使うわけでは�
 
 ```bash
 colmap spatial_matcher \
-  --database_path "$sfm_colmap_dir/database.db" \
+  --database_path "$COLMAP_DIR/database.db" \
   --FeatureMatching.use_gpu 0 \
   --SpatialMatching.ignore_z 0 \
   --SpatialMatching.max_distance 3.0 \
@@ -273,7 +280,7 @@ colmap spatial_matcher \
 
 ```bash
 colmap sequential_matcher \
-  --database_path "$sfm_colmap_dir/database.db" \
+  --database_path "$COLMAP_DIR/database.db" \
   --FeatureMatching.use_gpu 0 \
   --SequentialMatching.overlap 10 \
   --SequentialMatching.quadratic_overlap 0 \
@@ -297,11 +304,11 @@ sequentialの `overlap` は残った画像の順序上の間隔であり、元�
 上記のどの照合方式でも、復元時の位置制約を使うには `pose_prior_mapper` を実行します。
 
 ```bash
-mkdir -p "$sfm_colmap_dir/sparse"
+mkdir -p "$COLMAP_DIR/sparse"
 colmap pose_prior_mapper \
-  --database_path "$sfm_colmap_dir/database.db" \
-  --image_path "$sfm_capture_dir/images" \
-  --output_path "$sfm_colmap_dir/sparse" \
+  --database_path "$COLMAP_DIR/database.db" \
+  --image_path "$CAPTURE_DIR/images" \
+  --output_path "$COLMAP_DIR/sparse" \
   --use_robust_loss_on_prior_position 1
 ```
 

@@ -91,20 +91,34 @@ Stage の長さ単位と ROS のメートルが一致していることも確認
 
 ## 2. 画像と真値 TF を同じセッションに収集
 
+以降のコマンドは、**同じ端末で変数を設定してから実行**します。
+`$PWD` は端末の現在位置によって変わるため、この手順では使いません。
+`SESSION_NAME` だけを収集ごとに変更してください。出力先がすでに存在する場合は、
+同じ名前で再収集せず、新しい名前を指定します。
+
 ```bash
-cd ~/lab_navigation_ws
+WORKSPACE_DIR="$HOME/lab_navigation_ws"
+SESSION_NAME="isaac_001"
+CAPTURE_DIR="$WORKSPACE_DIR/captures/$SESSION_NAME"
+
+test -d "$WORKSPACE_DIR" || { echo "workspace not found: $WORKSPACE_DIR"; exit 1; }
+test ! -e "$CAPTURE_DIR" || { echo "output already exists: $CAPTURE_DIR"; exit 1; }
+
+cd "$WORKSPACE_DIR"
 source /opt/ros/humble/setup.bash
 PYTHONNOUSERSITE=1 colcon build --packages-select sfm_capture lab_navigation
 source install/local_setup.bash
 
-sfm_capture_dir="$PWD/captures/isaac_001"
 ros2 launch lab_navigation sfm_capture_isaacsim.launch.py \
-  output_dir:="$sfm_capture_dir" \
+  output_dir:="$CAPTURE_DIR" \
   image_topic:=/camera/image_raw \
   camera_info_topic:=/camera/camera_info \
   gt_tf_topic:=/sfm_gt_tf \
   save_fps:=2.0 duration_sec:=60.0
 ```
+
+収集を別端末で処理する場合は、同じ変数をもう一度設定してください。シェル変数は
+端末をまたいで引き継がれません。
 
 出力先は存在しないディレクトリにします。`duration_sec:=0.0` なら Ctrl+C まで収集します。
 この launch は画像 PNG、ヘッダ時刻、CameraInfo、`/clock`、`/sfm_gt_tf` と
@@ -112,9 +126,9 @@ ros2 launch lab_navigation sfm_capture_isaacsim.launch.py \
 ROS bag の受信時刻は使いません。`/sfm_gt_tf` が記録されない場合、抽出は失敗します。
 
 ```bash
-ros2 run sfm_capture check_dataset "$sfm_capture_dir"
-python3 -m json.tool "$sfm_capture_dir/bag_report.json"
-python3 -m json.tool "$sfm_capture_dir/camera_info.json"
+ros2 run sfm_capture check_dataset "$CAPTURE_DIR"
+python3 -m json.tool "$CAPTURE_DIR/bag_report.json"
+python3 -m json.tool "$CAPTURE_DIR/camera_info.json"
 ```
 
 `bag_report.json` の `/sfm_gt_tf` の `message_count` が正であること、
@@ -140,18 +154,35 @@ CameraInfo の `k[0]` と `k[4]` が正であることを確認します。
 
 ## 3. 各画像のカメラ中心位置を抽出
 
+収集済みデータを処理する場合は、実在する収集ディレクトリを絶対パスで設定します。
+ここで指定した `CAPTURE_DIR` に `images/`、`camera_info.json`、`bag/` が存在することを
+確認してから進めてください。
+
 ```bash
-sfm_pose_dir="$sfm_capture_dir/poses_world_camera_gt"
+WORKSPACE_DIR="$HOME/lab_navigation_ws"
+SESSION_NAME="isaac_001"
+CAPTURE_DIR="$WORKSPACE_DIR/captures/$SESSION_NAME"
+POSE_DIR="$CAPTURE_DIR/poses_world_camera_gt"
+CAMERA_FRAME="CameraRGB"
+WORLD_FRAME="world"
+GT_TF_TOPIC="/sfm_gt_tf"
+
+test -d "$CAPTURE_DIR/images" || { echo "images not found: $CAPTURE_DIR/images"; exit 1; }
+test -f "$CAPTURE_DIR/camera_info.json" || { echo "camera_info.json not found"; exit 1; }
+test -d "$CAPTURE_DIR/bag" || { echo "bag not found: $CAPTURE_DIR/bag"; exit 1; }
+
 ros2 run sfm_capture export_isaac_gt_poses \
-  "$sfm_capture_dir" "$sfm_pose_dir" \
-  --camera-frame sfm_gt_camera \
-  --world-frame world --tf-topic /sfm_gt_tf \
+  "$CAPTURE_DIR" "$POSE_DIR" \
+  --camera-frame "$CAMERA_FRAME" \
+  --world-frame "$WORLD_FRAME" --tf-topic "$GT_TF_TOPIC" \
   --position-std 0.05 0.05 0.05
 
-python3 -m json.tool "$sfm_pose_dir/poses_report.json"
+python3 -m json.tool "$POSE_DIR/poses_report.json"
 ```
 
-`sfm_gt_camera` は例です。実際の TF の `child_frame_id` に置き換えます。
+`CAMERA_FRAME` は例です。実際の `/sfm_gt_tf` の `child_frame_id` に置き換えます。
+`WORKSPACE_DIR` はデータを保存した場所に合わせて変更します。収集をホームディレクトリで
+実行した場合、保存先は `$HOME/captures/...` になっているため、そこを指定してください。
 抽出は、カメラフレームが専用トピック上で `world` の**直接の動的 child**であることを検査し、
 一般の `/tf` や推定された `map → odom → base_link` へ自動的にフォールバックしません。
 TF の時刻を画像時刻へ補間します。既定では補間に使う前後の TF 間隔が 0.2 秒を超える画像を
@@ -175,9 +206,9 @@ CSV のクォータニオンは記録しますが、このインポーターは�
 画像名を特徴抽出後に変更せず、COLMAP 4.2 系 CLI と対応する PyCOLMAP 4.2 系を使います。
 
 ```bash
-sfm_colmap_dir="$sfm_capture_dir/colmap_gt"
-mkdir -p "$sfm_colmap_dir/sparse"
-camera_params="$(python3 - "$sfm_capture_dir/camera_info.json" <<'PY'
+COLMAP_DIR="$CAPTURE_DIR/maps/sift"
+mkdir -p "$COLMAP_DIR/sparse"
+camera_params="$(python3 - "$CAPTURE_DIR/camera_info.json" <<'PY'
 import json
 import sys
 
@@ -190,19 +221,19 @@ PY
 )"
 
 colmap feature_extractor \
-  --database_path "$sfm_colmap_dir/features.db" \
-  --image_path "$sfm_capture_dir/images" \
+  --database_path "$COLMAP_DIR/features.db" \
+  --image_path "$CAPTURE_DIR/images" \
   --ImageReader.single_camera 1 \
   --ImageReader.camera_model PINHOLE \
   --ImageReader.camera_params "$camera_params" \
   --FeatureExtraction.use_gpu 0
 
 ros2 run sfm_capture import_pose_priors \
-  "$sfm_pose_dir/poses.csv" "$sfm_colmap_dir/features.db" \
-  --output-database "$sfm_colmap_dir/database.db"
+  "$POSE_DIR/poses.csv" "$COLMAP_DIR/features.db" \
+  --output-database "$COLMAP_DIR/database.db"
 
 colmap spatial_matcher \
-  --database_path "$sfm_colmap_dir/database.db" \
+  --database_path "$COLMAP_DIR/database.db" \
   --FeatureMatching.use_gpu 0 \
   --SpatialMatching.ignore_z 0 \
   --SpatialMatching.max_distance 3.0 \
@@ -210,9 +241,9 @@ colmap spatial_matcher \
   --SpatialMatching.min_num_neighbors 0
 
 colmap pose_prior_mapper \
-  --database_path "$sfm_colmap_dir/database.db" \
-  --image_path "$sfm_capture_dir/images" \
-  --output_path "$sfm_colmap_dir/sparse" \
+  --database_path "$COLMAP_DIR/database.db" \
+  --image_path "$CAPTURE_DIR/images" \
+  --output_path "$COLMAP_DIR/sparse" \
   --use_robust_loss_on_prior_position 1
 ```
 
@@ -229,11 +260,11 @@ CameraInfo が正確だと確認できた比較実験では、初回の復元で
 位置制約の影響を見やすくできます。別の出力先で次を実行します。
 
 ```bash
-mkdir -p "$sfm_colmap_dir/sparse_fixed_intrinsics"
+mkdir -p "$COLMAP_DIR/sparse_fixed_intrinsics"
 colmap pose_prior_mapper \
-  --database_path "$sfm_colmap_dir/database.db" \
-  --image_path "$sfm_capture_dir/images" \
-  --output_path "$sfm_colmap_dir/sparse_fixed_intrinsics" \
+  --database_path "$COLMAP_DIR/database.db" \
+  --image_path "$CAPTURE_DIR/images" \
+  --output_path "$COLMAP_DIR/sparse_fixed_intrinsics" \
   --use_robust_loss_on_prior_position 1 \
   --Mapper.ba_refine_focal_length 0 \
   --Mapper.ba_refine_principal_point 0 \

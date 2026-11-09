@@ -57,11 +57,11 @@ colmap mapper -h
 
 ## 3. 作業フォルダを準備する
 
-以下のコードは **Bash の同じターミナル**で順番に実行します。`sfm_project` は転送済みのセッションの絶対パスに置き換えてください。`sfm_result` は未使用の名前にし、設定を比較するときは新しい名前に変えます。
+以下のコードは **Bash の同じターミナル**で順番に実行します。`sfm_project` は転送済みのセッションの絶対パスに置き換えてください。完成地図の標準保存先は `maps/sift` です。設定を比較する別実験では `runs/sift/<run名>` を作業先にして検証後に採用モデルを選びます。
 
 ```bash
 sfm_project="$HOME/datasets/building_cw_01"
-sfm_result="$sfm_project/colmap_radial_run01"
+sfm_result="$sfm_project/maps/sift"
 export sfm_project sfm_result
 test -d "$sfm_project/images" || { echo "images がありません"; exit 1; }
 test ! -e "$sfm_result" || { echo "結果フォルダは新しい名前にしてください"; exit 1; }
@@ -310,9 +310,10 @@ session/
 ├── images/                    # 元画像・相対名を維持
 ├── timestamps.csv
 ├── カメラ設定・校正データ
-└── colmap_radial_run01/
+└── maps/sift/
     ├── database.db            # SIFT特徴、対応付けなど
     ├── sparse/0/              # 採用したカメラ・画像姿勢・3D点・観測関係
+    ├── reference_features.h5  # HLoc用。prepare_localization.pyで生成
     ├── model_txt/             # 人が点検できる書き出し
     └── logs/                  # バージョン/ヘルプ/処理結果
 ```

@@ -14,6 +14,8 @@ from hloc import match_features
 from hloc import matchers
 from hloc.utils.base_model import dynamic_load
 
+from .dataset_layout import model_dir, reference_features
+
 
 class SiftBackend:
 
@@ -36,20 +38,9 @@ class SiftBackend:
         # Paths
         # ----------------------------------------------------
 
-        self.sfm_path = (
-            self.data_path /
-            'sparse' /
-            '0'
-        )
-
-        self.hloc_dir = (
-            self.data_path /
-            'hloc_output'
-        )
-
-        self.reference_local_features = (
-            self.hloc_dir /
-            'feats-shift.h5'
+        self.sfm_path = model_dir(self.data_path, self.method_name)
+        self.reference_local_features = reference_features(
+            self.data_path, self.method_name,
         )
 
         if not self.sfm_path.exists():

@@ -2,7 +2,9 @@
 
 この文書は、Isaac Simのカメラ真値に沿って作成したSfMモデルを、
 HLocのオンラインVisual LocalizationとNav2へ接続する現在の運用手順です。
-文書全体の関係は [README.md](README.md) を参照してください。
+作業順とSIFT / SuperPoint + LightGlueの選択は
+[VISUAL_LOCALIZATION_WORKFLOW.md](VISUAL_LOCALIZATION_WORKFLOW.md)、文書全体の索引は
+[README.md](README.md) を参照してください。
 
 ## 1. 処理の全体像
 
@@ -11,11 +13,11 @@ Isaac Sim RGB + CameraInfo + camera world pose + /clock
     -> sfm_capture_isaacsim.launch.py
     -> images/ + poses_world_camera_gt/poses.csv
     -> COLMAP pose_prior_mapper
-    -> colmap_gt/sparse/0
+    -> maps/sift/sparse/0
     -> COLMAP SIFTをHLoc形式へ変換
-    -> hloc_output/feats-shift.h5
+    -> maps/sift/reference_features.h5
     -> 参照画像のNetVLADを抽出
-    -> hloc_output/global-ref-netvlad.h5
+    -> retrieval/netvlad.h5
     -> hloc_localizer
     -> /hloc/camera_pose
     -> hloc_tf_publisher
@@ -30,33 +32,53 @@ Isaac Sim RGB + CameraInfo + camera world pose + /clock
 2. [ISAAC_SIM_POSE_PRIORS.md](ISAAC_SIM_POSE_PRIORS.md)
 3. [POSE_PRIORS.md](POSE_PRIORS.md)
 
-## 2. 現在のIsaac Simデータ
+## 2. 作業パスを設定
+
+各作業端末で最初に次を実行し、データセット名は `SESSION_NAME` だけ変更します。
+新しい端末では変数を再設定してください。シェル変数は端末間では共有されません。
+
+```bash
+WORKSPACE_DIR="$HOME/lab_navigation_ws"
+SESSION_NAME="isaac_001"
+CAPTURE_DIR="$WORKSPACE_DIR/captures/$SESSION_NAME"
+SIFT_DIR="$CAPTURE_DIR/maps/sift"
+SUPERPOINT_DIR="$CAPTURE_DIR/maps/superpoint"
+IMAGE_DIR="$CAPTURE_DIR/images"
+
+test -d "$IMAGE_DIR" || { echo "images not found: $IMAGE_DIR"; exit 1; }
+cd "$WORKSPACE_DIR"
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+```
+
+新しいセッションを使う場合は、収集先の `SESSION_NAME` に変更します。
+収集をホームディレクトリから開始した場合は、`CAPTURE_DIR="$HOME/captures/$SESSION_NAME"` とします。
+
+## 3. 現在のIsaac Simデータ
 
 現在のデータセットは次です。
 
 ```text
-captures/isaac_gt_test_002/
-├── images/                         604画像
+captures/isaac_001/
+├── images/                         908画像
 ├── poses_world_camera_gt/
-└── colmap_gt/
-    ├── database.db
-    ├── sparse/0/                   602登録画像、97,408点
-    └── hloc_output/
-        ├── feats-shift.h5          602登録画像分
-        └── global-ref-netvlad.h5   NetVLAD参照特徴量
+├── maps/
+│   ├── sift/
+│   │   ├── database.db
+│   │   ├── sparse/0/               908登録画像、190,006点
+│   │   └── reference_features.h5   SIFT参照特徴量
+│   └── superpoint/
+│       ├── database.db
+│       ├── sparse/0/               908登録画像、110,578点
+│       └── reference_features.h5   SuperPoint参照特徴量
+└── retrieval/netvlad.h5           共通の検索特徴量
 ```
 
-SIFT方式に必要なオンライン参照データはすでに存在します。
-HLocの`data_path`には、収集ルートや`sparse/0`ではなく、次を指定します。
+両方式に必要なオンライン参照データはすでに存在します。
+HLocの`data_path`にはセッションルートの `$CAPTURE_DIR` を指定します。
+`isaac_gt_test_002` は SIFT のみなので、SuperPointを選ぶ場合は先にその地図を作ります。
 
-```text
-/home/user/lab_navigation_ws/captures/isaac_gt_test_002/colmap_gt
-```
-
-現在のIsaacデータには`hloc_output_superpoint_lightglue/`がないため、
-`local_method:=superpoint_lightglue`を選ぶ前にSP + LG用モデルを別途作成する必要があります。
-
-## 3. 仮想環境を使う場面
+## 4. 仮想環境を使う場面
 
 HLoc環境の初回構築は
 [lab_navigation_ws_setup_guide.md](../src/hloc_localizer/lab_navigation_ws_setup_guide.md)の
@@ -74,10 +96,7 @@ HLoc環境の初回構築は
 オフライン処理では次の順に読み込みます。
 
 ```bash
-cd ~/lab_navigation_ws
-source /opt/ros/humble/setup.bash
-source install/setup.bash
-source .venv/bin/activate
+source "$WORKSPACE_DIR/.venv/bin/activate"
 ```
 
 環境確認:
@@ -95,68 +114,34 @@ print('Torch CUDA:', torch.cuda.is_available())
 PY
 ```
 
-## 4. SfM後に追加で必要なHLoc参照データ
+## 5. SfM後に追加で必要なHLoc参照データ
 
 オンラインSIFT方式は、SfMモデルだけでは起動できません。次の3種類が必要です。
 
 | パス（`data_path`基準） | 用途 |
 | --- | --- |
-| `sparse/0/` | カメラ姿勢、内部パラメータ、3D点 |
-| `hloc_output/feats-shift.h5` | 登録済み参照画像のSIFT特徴量と3D点の対応 |
-| `hloc_output/global-ref-netvlad.h5` | オンライン画像から参照候補を検索する大域特徴量 |
+| `maps/sift/sparse/0/` | SIFTのカメラ姿勢、内部パラメータ、3D点 |
+| `maps/sift/reference_features.h5` | 登録済み参照画像のSIFT特徴量と3D点の対応 |
+| `retrieval/netvlad.h5` | オンライン画像から参照候補を検索する共通の大域特徴量 |
 
 現在は生成済みなので、SfMモデルや登録画像を変更しない限り再生成は不要です。
 再生成する場合は、既存ファイルを上書きせず新しい出力先で検証してから切り替えます。
 
-### 4.1 COLMAP SIFTをHLoc形式へ変換
+### 5.1 SIFT参照特徴量とNetVLADを生成・検証
 
 ```bash
-cd ~/lab_navigation_ws
-source /opt/ros/humble/setup.bash
-source install/setup.bash
-source .venv/bin/activate
-
-export capture_path="$PWD/captures/isaac_gt_test_002"
-export data_path="$capture_path/colmap_gt"
-export image_dir="$capture_path/images"
-export out="$data_path/hloc_output"
-
-mkdir -p "$out"
-
-python3 script/colmap_db_to_hloc.py \
-  --database "$data_path/database.db" \
-  --model "$data_path/sparse/0" \
-  --output "$out/feats-shift.h5"
+source "$WORKSPACE_DIR/.venv/bin/activate"
+python3 script/prepare_localization.py "$CAPTURE_DIR" --method sift
 ```
 
-### 4.2 登録済み画像一覧を作る
+### 5.2 SuperPoint参照データを検証
 
 ```bash
-python3 - <<'PY'
-import os
-from pathlib import Path
-import pycolmap
-
-data = Path(os.environ['data_path'])
-out = Path(os.environ['out'])
-model = pycolmap.Reconstruction(data / 'sparse/0')
-names = sorted(image.name for image in model.images.values())
-(out / 'reference.txt').write_text('\n'.join(names) + '\n')
-print('registered images:', len(names))
-PY
+python3 script/prepare_localization.py "$CAPTURE_DIR" --method superpoint --verify-only
 ```
 
-### 4.3 参照画像のNetVLADを生成
-
-```bash
-python3 -m hloc.extract_features \
-  --image_dir "$image_dir" \
-  --export_dir "$out" \
-  --conf netvlad \
-  --image_list "$out/reference.txt" \
-  --feature_path "$out/global-ref-netvlad.h5" \
-  --as_half
-```
+SuperPointの地図がまだないセッションでは、この検証はスキップします。
+作成手順は[SuperPoint SfM](../src/hloc_localizer/README_hloc_superpoint_colmap_sfm.md)を参照してください。
 
 初回はNetVLADのモデル重みを取得するため、ネットワーク接続と保存領域が必要です。
 query側のNetVLADファイルやpairファイルはオフライン評価では必要ですが、
@@ -166,11 +151,11 @@ query側のNetVLADファイルやpairファイルはオフライン評価では�
 [lab_navigation_ws_setup_guide.md](../src/hloc_localizer/lab_navigation_ws_setup_guide.md)の
 第10〜20節を参照してください。
 
-## 5. ビルド
+## 6. ビルド
 
 ```bash
 deactivate 2>/dev/null || true
-cd ~/lab_navigation_ws
+cd "$WORKSPACE_DIR"
 source /opt/ros/humble/setup.bash
 
 colcon build --packages-select hloc_localizer lab_navigation \
@@ -179,18 +164,27 @@ colcon build --packages-select hloc_localizer lab_navigation \
 source install/setup.bash
 ```
 
-## 6. 段階的に起動する
+## 7. 段階的に起動する
 
 最初はNav2の自律移動を無効にします。Isaac SimをPlayしてから実行します。
 
 ```bash
 source /opt/ros/humble/setup.bash
-source ~/lab_navigation_ws/install/setup.bash
+source "$WORKSPACE_DIR/install/setup.bash"
 
 ros2 launch lab_navigation navigation_isaacsim_visual.launch.py \
   start_navigation:=false \
   local_method:=sift \
-  data_path:=/home/user/lab_navigation_ws/captures/isaac_gt_test_002/colmap_gt
+  data_path:="$CAPTURE_DIR"
+```
+
+SuperPoint地図を使う場合は、上の起動を終了してから方式を変えます。
+
+```bash
+ros2 launch lab_navigation navigation_isaacsim_visual.launch.py \
+  start_navigation:=false \
+  local_method:=superpoint \
+  data_path:="$CAPTURE_DIR"
 ```
 
 `world -> map`補正は`map_name`に対応する次のファイルから読み込みます。
@@ -225,9 +219,9 @@ HLoc localizer、HLoc TF、障害物検出、Nav2、RVizはGNOME Terminalの
 個別タブで起動します。`start_hloc:=false`、`start_navigation:=false`、
 `start_rviz:=false`を指定したサブシステムのタブは起動しません。
 
-## 7. 起動後の確認順序
+## 8. 起動後の確認順序
 
-### 7.1 入力トピック
+### 8.1 入力トピック
 
 ```bash
 ros2 topic hz /camera/image_raw
@@ -236,7 +230,7 @@ ros2 topic hz /odom
 ros2 topic echo /clock --once
 ```
 
-### 7.2 HLocノードと出力
+### 8.2 HLocノードと出力
 
 ```bash
 ros2 node list | grep hloc
@@ -246,10 +240,10 @@ ros2 topic echo /hloc/localization_status --once
 ```
 
 `/hloc/camera_pose`のPublisher countが0なら、HLoc localizerタブの例外を確認します。
-よくある原因は、`data_path`が収集ルートまたは`sparse/0`を指していること、
+よくある原因は、`data_path`が地図フォルダや`sparse/0`を指していること、
 HLoc参照ファイルが不足していること、Python依存関係の不整合です。
 
-### 7.3 TF
+### 8.3 TF
 
 ```bash
 ros2 run tf2_ros tf2_echo odom base_link
@@ -268,13 +262,13 @@ map --hloc_tf_publisher--> odom --wheel odometry--> base_link
 `map -> odom`はHLocだけから配信します。AMCL、LiDAR localization、別のglobal EKFから
 同じTFを同時に配信しません。`/sfm_gt_tf`は評価専用で、Nav2へ接続しません。
 
-### 7.4 Nav2を有効化
+### 8.4 Nav2を有効化
 
 静止状態と低速手動走行で位置関係を確認した後、`start_navigation:=true`で再起動します。
 RVizでoccupancy map、robot footprint、LiDAR障害物、推定位置が重なることを確認してから
 短い目標を与えます。
 
-## 8. 精度評価
+## 9. 精度評価
 
 TFが存在するだけでは推定精度を判定できません。HLocとGround Truthを比較するときは、
 次を揃えます。
@@ -287,7 +281,7 @@ TFが存在するだけでは推定精度を判定できません。HLocとGroun
 動作中に最新GTと古いHLoc推定を比較すると、位置誤差に処理遅延分の移動量が混ざります。
 最初はNav2を止め、静止、低速直進、旋回、経路走行の順に評価します。
 
-## 9. 切り分けコマンド
+## 10. 切り分けコマンド
 
 ```bash
 ros2 run tf2_ros tf2_monitor map odom
@@ -301,7 +295,7 @@ ros2 run tf2_tools view_frames
 | 症状 | 最初に確認する箇所 |
 | --- | --- |
 | `/hloc/camera_pose`のPublisherが0 | HLoc localizerタブ、`ros2 node list`、実行ファイル |
-| HLocは起動するがすぐ終了 | `data_path`と第4節の3成果物 |
+| HLocは起動するがすぐ終了 | `data_path`と第5節の参照成果物 |
 | HLoc poseが更新されない | 画像のHz、QoS、localization status、候補画像数 |
 | `map -> odom`がない | HLoc pose、`odom -> base_link`、カメラ固定TF |
 | TFが揺れる・競合する | `tf2_monitor`で`map -> odom`の配信元を確認 |

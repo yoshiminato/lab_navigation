@@ -126,23 +126,16 @@ def main():
     data_path = Path(args.data_path)
 
     image_dir = data_path / "images"
-    sfm_model = data_path / "sparse" / "0"
+    sfm_model = data_path / "maps" / "sift" / "sparse" / "0"
 
-    base_hloc_dir = data_path / "hloc_output"
+    base_hloc_dir = data_path / "maps" / "sift"
 
-    reference_local_features = (
-        base_hloc_dir / "feats-shift.h5"
-    )
+    reference_local_features = base_hloc_dir / "reference_features.h5"
 
-    reference_global_features = (
-        base_hloc_dir / "global-ref-netvlad.h5"
-    )
+    reference_global_features = data_path / "retrieval" / "netvlad.h5"
 
     if args.output_dir is None:
-        output_dir = (
-            base_hloc_dir /
-            "sequential_benchmark"
-        )
+        output_dir = data_path / "runs" / "sift" / "benchmark_sequential"
     else:
         output_dir = Path(
             args.output_dir

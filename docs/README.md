@@ -1,8 +1,9 @@
 # lab_navigation_ws ドキュメント案内
 
-このファイルをワークスペースのドキュメント入口とします。
-Isaac Simでpose prior付きSfMを作成し、HLocによるVisual LocalizationをNav2へ接続する場合は、
-最初に [ISAAC_SIM_VISUAL_LOCALIZATION.md](ISAAC_SIM_VISUAL_LOCALIZATION.md) を参照してください。
+作業を始めるときは、まず [Visual Localization 作業フロー](VISUAL_LOCALIZATION_WORKFLOW.md) を参照してください。
+地図と中間成果物の保存先は [ディレクトリ配置](DATASET_LAYOUT.md) を参照してください。
+収集からSfM、HLoc、ROS 2、Nav2までの順番、SIFTとSuperPoint + LightGlueの選択、共通パス変数をまとめています。
+以下は各工程の詳細手順への索引です。
 
 ## 文書の関係
 
@@ -32,6 +33,7 @@ flowchart TD
 
 | 目的 | 正本 | 補足 |
 | --- | --- | --- |
+| 全工程の順番を確認する | [VISUAL_LOCALIZATION_WORKFLOW.md](VISUAL_LOCALIZATION_WORKFLOW.md) | 共通パス変数と方式の選択を含む入口 |
 | SfM用画像を収集する | [SFM_CAPTURE.md](SFM_CAPTURE.md) | 実機・シミュレーション共通 |
 | Isaac Simのカメラ真値をpose priorとして使う | [ISAAC_SIM_POSE_PRIORS.md](ISAAC_SIM_POSE_PRIORS.md) | `/sfm_gt_tf`の作成と抽出 |
 | 保存済みTFから一般的なpose priorを作る | [POSE_PRIORS.md](POSE_PRIORS.md) | 実機や既存bagにも使用 |
@@ -54,15 +56,23 @@ flowchart TD
 | --- | --- |
 | 収集 | `images/`, `timestamps.csv`, `camera_info.json`, `bag/` |
 | pose prior抽出 | `poses.csv`, `poses_report.json` |
-| SfM | `database.db`, `sparse/0/{cameras,images,points3D}.bin` |
-| HLoc参照データ | `hloc_output/feats-shift.h5`, `hloc_output/global-ref-netvlad.h5` |
-| SP + LGを使う場合 | `hloc_output_superpoint_lightglue/`以下の特徴量・match・再三角測量モデル |
+| SfM | `captures/<session>/maps/{sift,superpoint}/database.db`, `sparse/0/` |
+| HLoc参照データ | `maps/{sift,superpoint}/reference_features.h5`, `retrieval/netvlad.h5` |
+| SP + LGの中間結果 | `runs/superpoint/<run名>/`以下のpairs・matches・作業用DB |
 | ROS 2実行 | `/hloc/camera_pose`, `/hloc/localization_status`, `map -> odom` |
 | 評価 | Ground Truthと同一時刻・同一座標系で比較した誤差と成功率 |
 
 `captures/`以下のREADMEや結果ファイルは、その収録データ固有の記録です。
 ワークスペース全体の手順書としては扱いません。`src/external/`と`third_party/`の文書は、
 各外部プロジェクトの文書です。
+
+このワークスペースの既存セッションを移す手順は `python3 script/migrate_map_layout.py captures` で
+移動予定を確認し、`--apply` で実行します。既存の保存先は上書きしません。
+SIFTとSuperPointの参照特徴量・共通NetVLADは
+`python3 script/prepare_localization.py captures/<session> --method sift`
+（SuperPointなら `--method superpoint`）
+で生成・検証します。新規SuperPoint地図は
+`script/build_superpoint_map.py` を使用します。
 
 ## 整理方針
 

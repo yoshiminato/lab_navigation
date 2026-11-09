@@ -260,7 +260,7 @@ cd ~/lab_navigation_ws
 
 ls captures/hv_building_lab/20261010
 ls captures/hv_building_lab/20261010/images | head
-ls captures/hv_building_lab/20261010/sparse/0
+ls captures/hv_building_lab/20261010/maps/sift/sparse/0
 ```
 
 `sparse/0` には最低限以下が必要:
@@ -288,8 +288,11 @@ source ~/lab_navigation_ws/.venv/bin/activate
 環境変数:
 
 ```bash
-export data_path=$PWD/captures/hv_building_lab/20261010
-export out=${data_path}/hloc_output
+export WORKSPACE_DIR="$HOME/lab_navigation_ws"
+export SESSION_NAME="20261010"
+export data_path="$WORKSPACE_DIR/captures/hv_building_lab/$SESSION_NAME"
+export sift_dir=${data_path}/maps/sift
+export out=${data_path}/runs/sift/offline_check
 
 echo $data_path
 echo $out
@@ -301,11 +304,7 @@ echo $out
 
 ```bash
 mkdir -p ${out}
-
-python3 script/colmap_db_to_hloc.py \
-  --database ${data_path}/database.db \
-  --model ${data_path}/sparse/0 \
-  --output ${out}/feats-shift.h5
+python3 script/prepare_localization.py "${data_path}" --method sift
 ```
 
 今回の正常値:
@@ -317,10 +316,10 @@ Exported 1370 registered images
 確認:
 
 ```bash
-ls -lh ${out}/feats-shift.h5
+ls -lh ${sift_dir}/reference_features.h5
 ```
 
-今回のファイルサイズは約 9.2 GB。
+既存ファイルがある場合は変換を繰り返す必要はありません。
 
 ---
 
@@ -370,9 +369,10 @@ import pycolmap
 
 data_path = os.environ["data_path"]
 out = os.environ["out"]
+sift_dir = os.environ["sift_dir"]
 
 model = pycolmap.Reconstruction(
-    f"{data_path}/sparse/0"
+    f"{sift_dir}/sparse/0"
 )
 
 names = sorted(
@@ -417,13 +417,15 @@ python3 -m hloc.extract_features \
 
 ### Reference 側
 
+`prepare_localization.py` を実行済みなら `retrieval/netvlad.h5` は生成済みです。手動で参照画像だけを追加する場合:
+
 ```bash
 python3 -m hloc.extract_features \
   --image_dir ${data_path}/images \
   --export_dir ${out} \
   --conf netvlad \
   --image_list ${out}/reference.txt \
-  --feature_path ${out}/global-ref-netvlad.h5 \
+  --feature_path ${data_path}/retrieval/netvlad.h5 \
   --as_half
 ```
 
@@ -436,8 +438,8 @@ Query ごとに上位20枚を取得する。
 ```bash
 python3 -m hloc.pairs_from_retrieval \
   --descriptors ${out}/global-query-netvlad.h5 \
-  --db_descriptors ${out}/global-ref-netvlad.h5 \
-  --db_model ${data_path}/sparse/0 \
+  --db_descriptors ${data_path}/retrieval/netvlad.h5 \
+  --db_model ${sift_dir}/sparse/0 \
   --query_list ${data_path}/query.txt \
   --output ${out}/pairs-query-netvlad20.txt \
   --num_matched 20
@@ -467,7 +469,7 @@ match_features.main(
     conf,
     pairs=out / "pairs-query-netvlad20.txt",
     features=out / "feats-query-sift.h5",
-    features_ref=out / "feats-shift.h5",
+    features_ref=Path(os.environ["sift_dir"]) / "reference_features.h5",
     matches=out / "matches-query-sift.h5",
     overwrite=True,
 )
@@ -498,7 +500,7 @@ from pathlib import Path
 data = Path(os.environ["data_path"])
 out_dir = Path(os.environ["out"])
 
-model = pycolmap.Reconstruction(data / "sparse/0")
+model = pycolmap.Reconstruction(Path(os.environ["sift_dir"]) / "sparse/0")
 cam = next(iter(model.cameras.values()))
 
 queries = [
@@ -540,7 +542,7 @@ cy = 488.124656
 
 ```bash
 python3 -m hloc.localize_sfm \
-  --reference_sfm ${data_path}/sparse/0 \
+  --reference_sfm ${sift_dir}/sparse/0 \
   --queries ${out}/queries_with_intrinsics.txt \
   --features ${out}/feats-query-sift.h5 \
   --matches ${out}/matches-query-sift.h5 \
@@ -634,8 +636,8 @@ Isaac Simでの起動と`world -> map`補正は
 
 - [ ] `.venv`内で`hloc`, `pycolmap`, `torch`, `h5py`をimportできる
 - [ ] COLMAPモデルの登録画像数を確認した
-- [ ] `feats-shift.h5`を登録済み画像から生成した
-- [ ] `global-ref-netvlad.h5`を登録済み参照画像から生成した
+- [ ] `maps/sift/reference_features.h5`を登録済み画像から生成した
+- [ ] `retrieval/netvlad.h5`を登録済み参照画像から生成した
 - [ ] オフラインqueryでPnPの成功とinlier数を確認した
 - [ ] `hloc_localizer`と`lab_navigation`をビルドした
 

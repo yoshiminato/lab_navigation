@@ -41,14 +41,14 @@ ROS 2 の TF に画像の特徴量や点群を渡す必要はありません。N
 
 ### 2.1 作業用コピーを用意する
 
-この節は **SfM を行った別 PC** で実行します。まず [SfM 手順](COLMAP_SFM.md) に従って復元を完了してください。以下は収集データの `images/` と、SfM 手順で作った `colmap_radial_run01/database.db`、`colmap_radial_run01/sparse/0/` を使う例です。複数の復元モデルがある場合は、使用する経路を含むモデルを選びます。
+この節は **SfM を行った別 PC** で実行します。まず [SfM 手順](COLMAP_SFM.md) に従って復元を完了してください。以下は収集データの `images/` と、SIFT地図 `maps/sift/database.db`、`maps/sift/sparse/0/` を使う例です。複数の復元モデルがある場合は、使用する経路を含むモデルを選びます。
 
 `HOLDOUT_IMAGES` は別走行の `images` ディレクトリです。地図作成に使用済みの画像を指定しないでください。パスは実際の保存先に変更します。この節のコマンドは同じ Bash ターミナルで順に実行します。
 
 ```bash
 set -e
 SFM_PROJECT="$HOME/datasets/building_cw_01"
-SFM_RESULT="$SFM_PROJECT/colmap_radial_run01"
+SFM_RESULT="$SFM_PROJECT/maps/sift"
 HOLDOUT_IMAGES="$HOME/datasets/building_test/images"
 LOC_PROJECT="$HOME/datasets/building_localization_test"
 REF_MODEL="$SFM_RESULT/sparse/0"

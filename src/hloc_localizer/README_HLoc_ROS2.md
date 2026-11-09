@@ -13,6 +13,12 @@
 
 ## 1. 現在の構成
 
+`data_path` は収集セッションのルートを指定します。SIFT地図は
+`maps/sift/{sparse/0,reference_features.h5}`、SuperPoint地図は
+`maps/superpoint/{sparse/0,reference_features.h5}`、共通検索特徴量は
+`retrieval/netvlad.h5` にあります。`local_method` で使用地図を切り替えます。
+新規地図の生成・検証は [作業フロー](../../docs/VISUAL_LOCALIZATION_WORKFLOW.md) を参照してください。
+
 処理の流れは次の通りです。
 
 ```text
@@ -42,8 +48,11 @@ map -> base_link
 
 ```text
 sift
-superpoint_lightglue
+superpoint
 ```
+
+`superpoint` はSuperPoint特徴量とLightGlue照合を使います。旧指定の
+`superpoint_lightglue` も同じ方式の別名として受け付けます。
 
 ---
 
@@ -189,13 +198,13 @@ source ~/lab_navigation_ws/install/setup.bash
 
 ros2 run hloc_localizer hloc_localizer \
   --ros-args \
-  -p local_method:=superpoint_lightglue
+  -p local_method:=superpoint
 ```
 
 正常起動時には、例えば以下のようなログが表示されます。
 
 ```text
-Local method: superpoint_lightglue
+Local method: superpoint
 Loading SuperPoint extractor...
 Loading LightGlue matcher...
 Registered images: 1370
@@ -276,7 +285,7 @@ ros2 run hloc_localizer image_file_publisher \
 HLoc localizerが成功すると、次のようなログが出ます。
 
 ```text
-Method     : superpoint_lightglue
+Method     : superpoint
 Result     : SUCCESS
 Keypoints  : 1020
 Candidates : 20
@@ -365,7 +374,7 @@ SuperPoint + LightGlueの場合:
 ```bash
 ros2 run hloc_localizer hloc_localizer \
   --ros-args \
-  -p local_method:=superpoint_lightglue
+  -p local_method:=superpoint
 ```
 
 実カメラから `/camera/image_raw` が届くたびにHLocが処理します。
@@ -387,7 +396,7 @@ ros2 run hloc_localizer hloc_localizer \
 ```bash
 ros2 run hloc_localizer hloc_localizer \
   --ros-args \
-  -p local_method:=superpoint_lightglue \
+  -p local_method:=superpoint \
   -p image_topic:=/camera/color/image_raw
 ```
 
@@ -408,7 +417,7 @@ Candidates = 20
 ```bash
 ros2 run hloc_localizer hloc_localizer \
   --ros-args \
-  -p local_method:=superpoint_lightglue \
+  -p local_method:=superpoint \
   -p num_matched:=10
 ```
 
@@ -455,7 +464,7 @@ source ~/lab_navigation_ws/install/setup.bash
 
 ros2 run hloc_localizer hloc_localizer \
   --ros-args \
-  -p local_method:=superpoint_lightglue
+  -p local_method:=superpoint
 ```
 
 ---
@@ -551,7 +560,7 @@ SuperPoint + LightGlue:
 ```bash
 ros2 run hloc_localizer hloc_localizer \
   --ros-args \
-  -p local_method:=superpoint_lightglue
+  -p local_method:=superpoint
 ```
 
 HLoc TF:
