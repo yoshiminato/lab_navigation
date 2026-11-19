@@ -27,7 +27,7 @@ from rclpy.qos import (
 
 from cv_bridge import CvBridge
 from sensor_msgs.msg import Image
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from std_msgs.msg import String
 
 from hloc import extract_features
@@ -214,6 +214,22 @@ class HlocLocalizerNode(Node):
             'map',
         )
 
+        # /initialpose を受け取った後、半径を段階的に拡大する。
+        # 半径は SfM 座標系の単位（通常はスケール調整後の m）。
+        self.declare_parameter('prior_radii', [3.0, 5.0, 10.0])
+        self.declare_parameter('initialpose_topic', '/initialpose')
+        # 類似した別地点への再ジャンプを防ぐため成功後も局所探索を継続。
+        self.declare_parameter('continue_local_tracking', True)
+        # map -> SfM: p_sfm = scale * R(yaw) * p_map + translation
+        # 事前に既知の座標変換で較正すること。初期値は恒等変換。
+        self.declare_parameter('sfm_from_map_scale', 1.0)
+        self.declare_parameter('sfm_from_map_yaw', 0.0)
+        self.declare_parameter('sfm_from_map_x', 0.0)
+        self.declare_parameter('sfm_from_map_y', 0.0)
+        # base_link からカメラへの水平オフセット（base_link 座標系、m）
+        self.declare_parameter('camera_offset_x', 0.0)
+        self.declare_parameter('camera_offset_y', 0.0)
+
         self.data_path = Path(
             self.get_parameter(
                 'data_path'
@@ -261,6 +277,29 @@ class HlocLocalizerNode(Node):
                 'map_frame'
             ).value
         )
+
+        self.prior_radii = sorted(set(float(r) for r in
+            self.get_parameter('prior_radii').value))
+        if not self.prior_radii or any(r <= 0 or not math.isfinite(r)
+                                           for r in self.prior_radii):
+            raise ValueError('prior_radii must contain finite positive radii')
+        self.initialpose_topic = self.get_parameter('initialpose_topic').value
+        self.continue_local_tracking = bool(self.get_parameter('continue_local_tracking').value)
+        self.sfm_from_map_scale = float(self.get_parameter('sfm_from_map_scale').value)
+        self.sfm_from_map_yaw = float(self.get_parameter('sfm_from_map_yaw').value)
+        self.sfm_from_map_xy = np.array([
+            float(self.get_parameter('sfm_from_map_x').value),
+            float(self.get_parameter('sfm_from_map_y').value),
+        ], dtype=np.float64)
+        self.camera_offset_xy = np.array([
+            float(self.get_parameter('camera_offset_x').value),
+            float(self.get_parameter('camera_offset_y').value),
+        ], dtype=np.float64)
+        if self.sfm_from_map_scale <= 0 or not math.isfinite(self.sfm_from_map_scale):
+            raise ValueError('sfm_from_map_scale must be finite and positive')
+        self.position_prior_sfm = None
+        self.prior_radius_index = 0
+        self.local_tracking_active = False
 
         # ====================================================
         # Device
@@ -525,6 +564,24 @@ class HlocLocalizerNode(Node):
             'images'
         )
 
+        # SfM に登録された参照カメラ中心を NetVLAD の画像順に並べる。
+        # projection_center() は SfM world 座標系でのカメラ中心。
+        self.reference_xy = np.full((len(self.reference_names), 2),
+                                    np.nan, dtype=np.float64)
+        for index, name in enumerate(self.reference_names):
+            image_id = self.db_name_to_id.get(name)
+            if image_id is None:
+                continue
+            image = self.reconstruction.images[image_id]
+            if not image.has_pose:
+                continue
+            center = np.asarray(image.projection_center(), dtype=np.float64).reshape(-1)
+            self.reference_xy[index] = center[:2]
+        self.get_logger().info(
+            f'SfM positions available: {np.isfinite(self.reference_xy).all(axis=1).sum()}/'
+            f'{len(self.reference_names)}'
+        )
+
         # ====================================================
         # PnP
         # ====================================================
@@ -586,6 +643,13 @@ class HlocLocalizerNode(Node):
                 self.image_callback,
                 image_qos,
             )
+        )
+
+        self.initialpose_sub = self.create_subscription(
+            PoseWithCovarianceStamped,
+            self.initialpose_topic,
+            self.initialpose_callback,
+            10,
         )
 
         self.pose_pub = (
@@ -816,57 +880,131 @@ class HlocLocalizerNode(Node):
         )
 
     # ========================================================
-    # Retrieval
+    # RViz initial pose and position-constrained retrieval
     # ========================================================
 
-    # クエリ画像のNetVLAD大域特徴量, 全参照画像の大域特徴量を比較し, 類似画像を選別
-    def _retrieve(
-        self,
-        query_descriptor,
-    ):
-
-        similarity = (
-            query_descriptor
-            @ self.reference_global.T
-        )
-
-        k = min(
-            self.num_matched,
-            similarity.shape[1],
-        )
-
-        scores, indices = (
-            torch.topk(
-                similarity,
-                k=k,
-                dim=1,
-                largest=True,
+    def initialpose_callback(self, msg):
+        """RViz の base_link 初期姿勢を SfM カメラ位置の prior に変換。"""
+        if msg.header.frame_id.lstrip('/') != self.map_frame.lstrip('/'):
+            self.get_logger().error(
+                f'Ignoring initialpose: frame_id={msg.header.frame_id!r} '
+                f'(expected {self.map_frame!r}); no TF conversion is implemented.'
             )
+            return
+
+        pose = msg.pose.pose
+        q = pose.orientation
+        q_tuple = (float(q.x), float(q.y), float(q.z), float(q.w))
+        try:
+            qx, qy, qz, qw = quat_normalize(q_tuple)
+        except ValueError:
+            self.get_logger().error('Ignoring initialpose: zero quaternion')
+            return
+        # ROS の 2D Pose Estimate が設定するロボット yaw。
+        yaw = math.atan2(2.0 * (qw * qz + qx * qy),
+                         1.0 - 2.0 * (qy * qy + qz * qz))
+        c, sn = math.cos(yaw), math.sin(yaw)
+        base_xy = np.array([pose.position.x, pose.position.y], dtype=np.float64)
+        cam_map_xy = base_xy + np.array([
+            c * self.camera_offset_xy[0] - sn * self.camera_offset_xy[1],
+            sn * self.camera_offset_xy[0] + c * self.camera_offset_xy[1],
+        ])
+        c, sn = math.cos(self.sfm_from_map_yaw), math.sin(self.sfm_from_map_yaw)
+        rot_xy = np.array([
+            c * cam_map_xy[0] - sn * cam_map_xy[1],
+            sn * cam_map_xy[0] + c * cam_map_xy[1],
+        ])
+        center = self.sfm_from_map_scale * rot_xy + self.sfm_from_map_xy
+        if not np.isfinite(center).all():
+            self.get_logger().error('Ignoring non-finite initialpose')
+            return
+        self.position_prior_sfm = center
+        self.prior_radius_index = 0
+        self.local_tracking_active = False
+        self.get_logger().info(
+            f'Initialpose received: SfM camera center XY={center.tolist()}, '
+            f'radius={self.prior_radii[0]:.2f} SfM units. '
+            'Local search remains active until localization succeeds.'
         )
 
-        indices = (
-            indices[0]
-            .detach()
-            .cpu()
-            .numpy()
-        )
+    def _retrieve(self, query_descriptor):
+        """NetVLAD retrieval。prior 中は指定半径内だけを候補とする。"""
+        similarity = (query_descriptor @ self.reference_global.T)[0]
+        if self.position_prior_sfm is None:
+            candidate_indices = torch.arange(
+                similarity.shape[0], device=self.device, dtype=torch.long)
+        else:
+            radius = self.prior_radii[self.prior_radius_index]
+            distances = np.linalg.norm(
+                self.reference_xy - self.position_prior_sfm[None, :], axis=1)
+            nearby = np.flatnonzero(np.isfinite(distances) & (distances <= radius))
+            candidate_indices = torch.as_tensor(
+                nearby, dtype=torch.long, device=self.device)
+            self.get_logger().info(
+                f'Prior search radius={radius:.2f}, nearby references={len(nearby)}'
+            )
 
-        scores = (
-            scores[0]
-            .detach()
-            .cpu()
-            .numpy()
-        )
-
-        names = [
-            self.reference_names[index]
-            for index in indices
-        ]
-
+        if candidate_indices.numel() == 0:
+            return [], np.empty(0, dtype=np.float32)
+        k = min(self.num_matched, candidate_indices.numel())
+        scores, ranking = torch.topk(
+            similarity[candidate_indices], k=k, largest=True)
+        indices = candidate_indices[ranking].detach().cpu().tolist()
         return (
-            names,
-            scores,
+            [self.reference_names[index] for index in indices],
+            scores.detach().cpu().numpy(),
         )
+
+    @staticmethod
+    def _estimated_camera_xy(cam_from_world):
+        # cam_from_world: world -> camera。逆変換してSfM座標内のカメラ中心を得る。
+        q = quat_normalize(tuple(float(v) for v in cam_from_world.rotation.quat))
+        q_inv = quat_conjugate(q)
+        t = tuple(-float(v) for v in cam_from_world.translation)
+        return np.asarray(rotate_vector(q_inv, t)[:2], dtype=np.float64)
+
+    def _validate_position_prior(self, result):
+        """PnPのインライア数だけでなく、指定地点との幾何的一致も検査。"""
+        if not result['success'] or self.position_prior_sfm is None:
+            return result
+        xy = self._estimated_camera_xy(result['cam_from_world'])
+        distance = float(np.linalg.norm(xy - self.position_prior_sfm))
+        radius = self.prior_radii[self.prior_radius_index]
+        self.get_logger().info(
+            f'PnP SfM XY={xy.tolist()}, prior XY={self.position_prior_sfm.tolist()}, '
+            f'error={distance:.3f}, tolerance={radius:.3f} SfM units')
+        if not np.isfinite(distance) or distance > radius:
+            result['success'] = False
+            result['reason'] = 'pose_outside_prior_radius'
+            self.get_logger().warning('PnP pose rejected: outside local search radius')
+        else:
+            result['estimated_xy'] = xy
+        return result
+
+    def _update_prior_after_attempt(self, result):
+        if self.position_prior_sfm is None:
+            return
+        if result['success']:
+            if self.continue_local_tracking:
+                self.position_prior_sfm = result['estimated_xy']
+                self.prior_radius_index = 0
+                if not self.local_tracking_active:
+                    self.get_logger().info('Prior accepted; local tracking enabled (global retrieval disabled).')
+                self.local_tracking_active = True
+            else:
+                self.get_logger().info('Prior accepted; returning to global retrieval (may jump to a similar location).')
+                self.position_prior_sfm = None
+                self.prior_radius_index = 0
+                self.local_tracking_active = False
+        elif self.prior_radius_index < len(self.prior_radii) - 1:
+            self.prior_radius_index += 1
+            self.get_logger().warning(
+                f'Local localization failed; next radius '
+                f'{self.prior_radii[self.prior_radius_index]:.2f} SfM units.')
+        else:
+            self.get_logger().warning(
+                'Local localization failed at maximum radius; keeping local mode. '
+                'Use /initialpose again to reset the center.')
 
     # ========================================================
     # Pose publisher
@@ -986,6 +1124,7 @@ class HlocLocalizerNode(Node):
 
         try:
             result = self._process_image(msg, frame_number, total_start)
+            result = self._validate_position_prior(result)
             if result['success']:
                 self._publish_pose(msg, result['cam_from_world'])
                 self.success_count += 1
@@ -999,6 +1138,8 @@ class HlocLocalizerNode(Node):
                 'num_matches': 0,
                 'num_inliers': 0,
             }
+
+        self._update_prior_after_attempt(result)
 
         self._publish_localization_status(
             msg,
@@ -1120,6 +1261,15 @@ class HlocLocalizerNode(Node):
             time.perf_counter()
             - start
         )
+
+        if not reference_names:
+            self.get_logger().warning('No reference images inside the prior radius.')
+            return {
+                'success': False,
+                'reason': 'no_prior_candidates',
+                'num_matches': 0,
+                'num_inliers': 0,
+            }
 
         if reference_names:
 

@@ -155,6 +155,12 @@ def generate_launch_description():
                 ' -p local_method:=', local_method,
                 ' -p num_matched:=', num_matched,
                 ' -p map_frame:=', map_frame,
+                ' -p sfm_from_map_x:=-5.0',
+                ' -p sfm_from_map_y:=-10.0',
+                ' -p sfm_from_map_yaw:=0.0',
+                ' -p sfm_from_map_scale:=1.0',
+                ' --params-file ', alignment_yaml,
+
                 '; exec bash',
             ],
         ],
