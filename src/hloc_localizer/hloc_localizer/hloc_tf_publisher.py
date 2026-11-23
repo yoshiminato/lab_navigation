@@ -21,7 +21,7 @@ from rclpy.time import Time
 from rclpy.qos import (
     QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 )
-from geometry_msgs.msg import PoseStamped, TransformStamped
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, TransformStamped
 from tf2_ros import Buffer, TransformListener, TransformBroadcaster
 
 
@@ -81,6 +81,7 @@ class HlocTfPublisher(Node):
         super().__init__('hloc_tf_publisher')
 
         self.declare_parameter('pose_topic', '/hloc/camera_pose')
+        self.declare_parameter('initialpose_topic', '/initialpose')
         self.declare_parameter('map_frame', 'map')
         self.declare_parameter('odom_frame', 'odom')
         self.declare_parameter('base_frame', 'base_link')
@@ -94,6 +95,7 @@ class HlocTfPublisher(Node):
         self.declare_parameter('world_to_map_yaw_deg', 0.0)
 
         self.pose_topic = self.get_parameter('pose_topic').value
+        self.initialpose_topic = self.get_parameter('initialpose_topic').value
         self.map_frame = self.get_parameter('map_frame').value
         self.odom_frame = self.get_parameter('odom_frame').value
         self.base_frame = self.get_parameter('base_frame').value
@@ -122,9 +124,19 @@ class HlocTfPublisher(Node):
         self.pose_sub = self.create_subscription(
             PoseStamped, self.pose_topic, self.pose_callback, pose_qos
         )
+        # RVIZ_INITIALPOSE_TF_PATCH_V1
+        # RViz 2D Pose Estimate sends PoseWithCovarianceStamped (map -> base_link).
+        self.initialpose_sub = self.create_subscription(
+            PoseWithCovarianceStamped, self.initialpose_topic,
+            self.initialpose_callback, 10
+        )
         self.pending_pose = None
         self.last_processed_stamp = None
         self.map_to_odom = None
+        self.pending_initialpose = None
+        self.initialpose_cutoff_ns = None
+        self.initialpose_tf_warned = False
+        self.pose_source = None
         self.timer = self.create_timer(0.05, self.timer_callback)
 
         self.get_logger().info(
@@ -134,7 +146,82 @@ class HlocTfPublisher(Node):
         )
 
     def pose_callback(self, msg):
+        # Ignore latched/slow HLoc results captured BEFORE the latest reset.
+        # HLoc publishes query-image timestamps in the ROS simulated clock.
+        stamp_ns = msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec
+        if (self.initialpose_cutoff_ns is not None
+                and stamp_ns <= self.initialpose_cutoff_ns):
+            return
         self.pending_pose = msg
+
+    def initialpose_callback(self, msg):
+        # An /initialpose describes the robot BASE in the map frame, not the camera.
+        frame = msg.header.frame_id.lstrip('/')
+        if frame != self.map_frame.lstrip('/'):
+            self.get_logger().error(
+                f'Ignoring /initialpose frame {frame!r}; expected {self.map_frame!r}')
+            return
+
+        p = msg.pose.pose.position
+        o = msg.pose.pose.orientation
+        t_map_base = (float(p.x), float(p.y), float(p.z))
+        q_raw = (float(o.x), float(o.y), float(o.z), float(o.w))
+        if not all(math.isfinite(v) for v in t_map_base + q_raw):
+            self.get_logger().error('Ignoring /initialpose containing non-finite values')
+            return
+        try:
+            q_map_base = quat_normalize(q_raw)
+        except ValueError:
+            self.get_logger().error('Ignoring /initialpose with zero quaternion')
+            return
+
+        # New manual estimate supersedes any previously computed HLoc map->odom.
+        # Suppress delayed /hloc/camera_pose and TRANSIENT_LOCAL cached poses.
+        received_ns = self.get_clock().now().nanoseconds
+        header_ns = msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec
+        # Compare in this node's ROS clock domain. An external /initialpose
+        # stamp may use wall time even while this node uses /clock; do not let
+        # that freeze future HLoc updates by creating a huge cutoff.
+        self.initialpose_cutoff_ns = received_ns if received_ns > 0 else header_ns
+        self.pending_pose = None
+        self.last_processed_stamp = None
+        self.map_to_odom = None
+        self.pose_source = None
+        self.pending_initialpose = (t_map_base, q_map_base)
+        self.initialpose_tf_warned = False
+        self.get_logger().info(
+            f'/initialpose accepted: map->base={tuple(round(x, 3) for x in t_map_base)}; '
+            'waiting for odom->base if necessary')
+        self.apply_initialpose()
+
+    def apply_initialpose(self):
+        # Use the LATEST odom->base for manual initialization (not image capture time).
+        if self.pending_initialpose is None:
+            return True
+        try:
+            tf_odom_base = self.tf_buffer.lookup_transform(
+                self.odom_frame, self.base_frame, Time(),
+                timeout=Duration(seconds=0.2),
+            )
+        except Exception as error:
+            if not self.initialpose_tf_warned:
+                self.get_logger().warning(
+                    f'Cannot apply /initialpose yet; waiting for odom->base TF: {error}')
+                self.initialpose_tf_warned = True
+            return False
+
+        t_map_base, q_map_base = self.pending_initialpose
+        t_odom_base, q_odom_base = read_transform(tf_odom_base)
+        t_base_odom, q_base_odom = invert_transform(t_odom_base, q_odom_base)
+        t_map_odom, q_map_odom = compose_transform(
+            t_map_base, q_map_base, t_base_odom, q_base_odom)
+        self.map_to_odom = (t_map_odom, q_map_odom)
+        self.pending_initialpose = None
+        self.pose_source = 'initialpose'
+        self.get_logger().info(
+            f'/initialpose TF applied: map->odom translation='
+            f'{tuple(round(x, 3) for x in t_map_odom)}')
+        return True
 
     def process_pose(self, pose):
         pose_time = Time.from_msg(pose.header.stamp)
@@ -184,6 +271,7 @@ class HlocTfPublisher(Node):
         )
 
         self.map_to_odom = (t_map_odom, q_map_odom)
+        self.pose_source = 'hloc'
         self.get_logger().info(
             'HLOC TF updated\n'
             f'world -> camera: {tuple(round(x, 3) for x in t_world_camera)}\n'
@@ -213,6 +301,11 @@ class HlocTfPublisher(Node):
         self.tf_broadcaster.sendTransform(msg)
 
     def timer_callback(self):
+        # Retry TF lookup without replaying an old HLoc pose during reset.
+        if self.pending_initialpose is not None:
+            self.apply_initialpose()
+            self.publish_map_to_odom()
+            return
         if self.pending_pose is not None:
             s = self.pending_pose.header.stamp
             stamp_key = (s.sec, s.nanosec)
