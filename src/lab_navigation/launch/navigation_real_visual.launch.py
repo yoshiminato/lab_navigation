@@ -1,3 +1,8 @@
+
+import os as _lab_os
+from pathlib import Path as _LabPath
+_LAB_WS_ROOT = _LabPath(_lab_os.environ.get("LAB_NAVIGATION_WS") or (_LabPath.home() / "lab_navigation_ws")).expanduser()
+
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
@@ -21,37 +26,28 @@ def generate_launch_description():
     declare_pcd_file_path_cmd = DeclareLaunchArgument(
         'pcd_file_path',
         default_value=(
-            '/home/user/lab_navigation_ws/'
-            'src/lab_navigation/pcd/'
-            'hv_building_lab.pcd'
+            str(_LAB_WS_ROOT / 'src/lab_navigation/pcd/hv_building_lab.pcd')
         ),
     )
 
     declare_map_yaml_file_path_cmd = DeclareLaunchArgument(
         'map_yaml_file_path',
         default_value=(
-            '/home/user/lab_navigation_ws/'
-            'src/lab_navigation/map/'
-            'hv_building_lab/'
-            'hv_building_lab.yaml'
+            str(_LAB_WS_ROOT / 'src/lab_navigation/map/hv_building_lab/hv_building_lab.yaml')
         ),
     )
 
     declare_nav2_params_file_path_cmd = DeclareLaunchArgument(
         'nav2_params_file_path',
         default_value=(
-            '/home/user/lab_navigation_ws/'
-            'src/lab_navigation/params/'
-            'nav2_params.yaml'
+            str(_LAB_WS_ROOT / 'src/lab_navigation/params/nav2_params.yaml')
         ),
     )
 
     declare_localization_params_file_path_cmd = DeclareLaunchArgument(
         'localization_params_file_path',
         default_value=(
-            '/home/user/lab_navigation_ws/'
-            'src/lab_navigation/params/'
-            'localization.yaml'
+            str(_LAB_WS_ROOT / 'src/lab_navigation/params/localization.yaml')
         ),
     )
 
@@ -76,7 +72,7 @@ def generate_launch_description():
 
     hloc_data_path_arg = DeclareLaunchArgument(
         'hloc_data_path',
-        default_value='/home/user/lab_navigation_ws/captures/hv_building_lab/20261010',
+        default_value=str(_LAB_WS_ROOT / 'captures/hv_building_lab/20261010'),
     )
     local_method_arg = DeclareLaunchArgument(
         'local_method', default_value='superpoint',

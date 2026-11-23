@@ -9,6 +9,11 @@ The per-map alignment parameter file is:
 Only hloc_tf_publisher publishes map -> odom; no AMCL or LiDAR localization.
 """
 
+import os as _lab_os
+from pathlib import Path as _LabPath
+_LAB_WS_ROOT = _LabPath(_lab_os.environ.get("LAB_NAVIGATION_WS") or (_LabPath.home() / "lab_navigation_ws")).expanduser()
+
+
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
@@ -89,7 +94,7 @@ def generate_launch_description():
         DeclareLaunchArgument('image_topic', default_value='/camera/image_raw'),
         DeclareLaunchArgument(
             'data_path',
-            default_value='/home/user/lab_navigation_ws/captures/isaac_001'),
+            default_value=str(_LAB_WS_ROOT / 'captures/isaac_001')),
         DeclareLaunchArgument('local_method', default_value='sift'),
         DeclareLaunchArgument('num_matched', default_value='20'),
         DeclareLaunchArgument('camera_frame', default_value='camera_optical_frame'),

@@ -1,3 +1,8 @@
+
+import os as _lab_os
+from pathlib import Path as _LabPath
+_LAB_WS_ROOT = _LabPath(_lab_os.environ.get("LAB_NAVIGATION_WS") or (_LabPath.home() / "lab_navigation_ws")).expanduser()
+
 from launch import LaunchDescription
 from launch_ros.actions import Node
 
@@ -18,7 +23,7 @@ def generate_launch_description():
         executable='teleop_node',
         name='teleop_twist_joy',
         output='screen',
-        parameters=['/home/user/lab_navigation_ws/src/lab_navigation/config/ps3.config.yaml']
+        parameters=[str(_LAB_WS_ROOT / 'src/lab_navigation/config/ps3.config.yaml')]
 
     )
 

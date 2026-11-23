@@ -1,3 +1,10 @@
 #!/usr/bin/env bash
-exec /home/user/lab_navigation_ws/.venv/bin/python3 \
-  -m hloc_localizer.hloc_localizer "$@"
+WORKSPACE_DIR="${LAB_NAVIGATION_WS:-${HOME}/lab_navigation_ws}"
+PYTHON="${WORKSPACE_DIR}/.venv/bin/python3"
+
+if [ ! -x "${PYTHON}" ]; then
+    echo "Python interpreter not found: ${PYTHON}" >&2
+    exit 127
+fi
+
+exec "${PYTHON}" -m hloc_localizer.hloc_localizer "$@"

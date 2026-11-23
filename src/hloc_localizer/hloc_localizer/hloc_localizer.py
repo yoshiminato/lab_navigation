@@ -170,11 +170,13 @@ class HlocLocalizerNode(Node):
 
         self.declare_parameter(
             'data_path',
-            '/home/user/'
-            'lab_navigation_ws/'
-            'captures/'
-            'hv_building_lab/'
-            '20261010',
+            str(
+                Path.home()
+                / 'lab_navigation_ws'
+                / 'captures'
+                / 'hv_building_lab'
+                / '20261010'
+            ),
         )
 
         self.declare_parameter(

@@ -1,5 +1,10 @@
 """Run LiDAR-driven navigation while recording HLoc poses for evaluation."""
 
+import os as _lab_os
+from pathlib import Path as _LabPath
+_LAB_WS_ROOT = _LabPath(_lab_os.environ.get("LAB_NAVIGATION_WS") or (_LabPath.home() / "lab_navigation_ws")).expanduser()
+
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription
 from launch.conditions import IfCondition
@@ -13,22 +18,19 @@ def generate_launch_description():
     map_yaml_arg = DeclareLaunchArgument(
         'map_yaml_file_path',
         default_value=(
-            '/home/user/lab_navigation_ws/src/lab_navigation/'
-            'map/hv_building_lab/hv_building_lab.yaml'
+            str(_LAB_WS_ROOT / 'src/lab_navigation/map/hv_building_lab/hv_building_lab.yaml')
         ),
     )
     nav2_params_arg = DeclareLaunchArgument(
         'nav2_params_file_path',
         default_value=(
-            '/home/user/lab_navigation_ws/src/lab_navigation/'
-            'params/nav2_params.yaml'
+            str(_LAB_WS_ROOT / 'src/lab_navigation/params/nav2_params.yaml')
         ),
     )
     localization_params_arg = DeclareLaunchArgument(
         'localization_params_file_path',
         default_value=(
-            '/home/user/lab_navigation_ws/src/lab_navigation/'
-            'params/localization.yaml'
+            str(_LAB_WS_ROOT / 'src/lab_navigation/params/localization.yaml')
         ),
     )
     serial_port_arg = DeclareLaunchArgument(
@@ -45,8 +47,7 @@ def generate_launch_description():
     hloc_data_path_arg = DeclareLaunchArgument(
         'hloc_data_path',
         default_value=(
-            '/home/user/lab_navigation_ws/captures/'
-            'hv_building_lab/20261010'
+            str(_LAB_WS_ROOT / 'captures/hv_building_lab/20261010')
         ),
     )
     local_method_arg = DeclareLaunchArgument(
@@ -55,8 +56,7 @@ def generate_launch_description():
     bag_output_dir_arg = DeclareLaunchArgument(
         'bag_output_dir',
         default_value=(
-            '/home/user/lab_navigation_ws/captures/'
-            'hv_building_lab/evaluation/run_01'
+            str(_LAB_WS_ROOT / 'captures/hv_building_lab/evaluation/run_01')
         ),
     )
     record_bag_arg = DeclareLaunchArgument('record_bag', default_value='true')
