@@ -9,6 +9,24 @@
 #include <memory>
 #include <string>
 
+#include <cstdlib>
+#include <stdexcept>
+#include <string>
+
+static std::string lab_orbslam3_dir() {
+    const char* custom = std::getenv("ORB_SLAM3_DIR");
+    if (custom && *custom) {
+        return std::string(custom);
+    }
+    const char* home = std::getenv("HOME");
+    if (home && *home) {
+        return std::string(home) + "/ORB_SLAM3";
+    }
+    throw std::runtime_error("Set ORB_SLAM3_DIR or HOME");
+}
+
+
+
 class MonoNode : public rclcpp::Node
 {
 public:
@@ -18,12 +36,12 @@ public:
         const std::string voc_file =
             declare_parameter<std::string>(
                 "voc_file",
-                "/home/user/ORB_SLAM3/Vocabulary/ORBvoc.txt");
+                lab_orbslam3_dir() + "/Vocabulary/ORBvoc.txt");
 
         const std::string settings_file =
             declare_parameter<std::string>(
                 "settings_file",
-                "/home/user/ORB_SLAM3/Examples/Monocular-Inertial/robot.yaml");
+                lab_orbslam3_dir() + "/Examples/Monocular-Inertial/robot.yaml");
 
         const bool viewer =
             declare_parameter<bool>(

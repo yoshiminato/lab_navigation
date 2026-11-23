@@ -14,7 +14,15 @@ find_package(Pangolin REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 
-set(ORB_SLAM3_DIR "/home/user/ORB_SLAM3")
+if(NOT DEFINED ORB_SLAM3_DIR OR "${ORB_SLAM3_DIR}" STREQUAL "")
+  if(DEFINED ENV{ORB_SLAM3_DIR} AND NOT "$ENV{ORB_SLAM3_DIR}" STREQUAL "")
+    set(ORB_SLAM3_DIR "$ENV{ORB_SLAM3_DIR}")
+  elseif(DEFINED ENV{HOME} AND NOT "$ENV{HOME}" STREQUAL "")
+    set(ORB_SLAM3_DIR "$ENV{HOME}/ORB_SLAM3")
+  else()
+    message(FATAL_ERROR "Set ORB_SLAM3_DIR or HOME")
+  endif()
+endif()
 
 add_executable(
   orbslam3_smoke
