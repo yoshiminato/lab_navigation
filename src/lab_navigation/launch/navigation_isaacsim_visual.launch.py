@@ -112,6 +112,7 @@ def generate_launch_description():
             'gui': 'false',
             'use_sim_time': use_sim_time,
             'start_micro_ros_agent': 'false',
+            'use_mock_hardware': 'true',
             'robot_xacro': robot_xacro,
         }.items(),
     )
